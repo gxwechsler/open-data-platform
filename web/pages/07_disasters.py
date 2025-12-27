@@ -37,14 +37,14 @@ if not df.empty:
         st.metric("Total Events", len(df))
     with col2:
         deaths_total = df['deaths'].sum() if 'deaths' in df.columns else 0
-        st.metric("Total Deaths", f"{deaths_total:,.0f}" if pd.notna(deaths_total) else "N/A")
+        st.metric("Total Deaths", f"{int(deaths_total):,}" if pd.notna(deaths_total) else "N/A")
     with col3:
         affected_total = df['total_affected'].sum() if 'total_affected' in df.columns else 0
-        st.metric("Total Affected", f"{affected_total:,.0f}" if pd.notna(affected_total) else "N/A")
+        st.metric("Total Affected", f"{int(affected_total):,}" if pd.notna(affected_total) else "N/A")
     with col4:
         damage = df['damage_usd'].sum() if 'damage_usd' in df.columns else 0
-        if pd.notna(damage) and damage > 0:
-            st.metric("Total Damage", f"${damage/1e9:,.1f}B")
+        if pd.notna(damage) and float(damage) > 0:
+            st.metric("Total Damage", f"${float(damage)/1e9:,.1f}B")
         else:
             st.metric("Total Damage", "N/A")
 
