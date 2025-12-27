@@ -23,10 +23,15 @@ sources = data.get_sources()
 selected_source = st.sidebar.selectbox("Data Source", ["All"] + sources)
 source_filter = None if selected_source == "All" else selected_source
 
-# Get indicators
-indicators = data.get_indicators(source=source_filter)
+# Category filter (NEW)
+categories = data.get_categories(source=source_filter)
+selected_category = st.sidebar.selectbox("Category", ["All"] + categories)
+category_filter = None if selected_category == "All" else selected_category
+
+# Get indicators filtered by source AND category
+indicators = data.get_indicators(source=source_filter, category=category_filter)
 if not indicators:
-    st.warning("No indicators available.")
+    st.warning("No indicators available for selected filters.")
     st.stop()
 
 indicator_options = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in indicators}
