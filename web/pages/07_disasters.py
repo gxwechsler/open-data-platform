@@ -36,15 +36,20 @@ if not df.empty:
     with col1:
         st.metric("Total Events", len(df))
     with col2:
-        st.metric("Total Deaths", f"{df['deaths'].sum():,.0f}" if 'deaths' in df.columns else "N/A")
+        deaths_total = df['deaths'].sum() if 'deaths' in df.columns else 0
+        st.metric("Total Deaths", f"{deaths_total:,.0f}" if pd.notna(deaths_total) else "N/A")
     with col3:
-        st.metric("Total Affected", f"{df['total_affected'].sum():,.0f}" if 'total_affected' in df.columns else "N/A")
+        affected_total = df['total_affected'].sum() if 'total_affected' in df.columns else 0
+        st.metric("Total Affected", f"{affected_total:,.0f}" if pd.notna(affected_total) else "N/A")
     with col4:
         damage = df['damage_usd'].sum() if 'damage_usd' in df.columns else 0
-        st.metric("Total Damage", f"${damage/1e9:,.1f}B")
-    
+        if pd.notna(damage) and damage > 0:
+            st.metric("Total Damage", f"${damage/1e9:,.1f}B")
+        else:
+            st.metric("Total Damage", "N/A")
+
     tab1, tab2, tab3 = st.tabs(["📊 Charts", "📈 Trends", "📋 Data"])
-    
+
     with tab1:
         col1, col2 = st.columns(2)
         with col1:
@@ -57,12 +62,12 @@ if not df.empty:
                 deaths_by_type = df.groupby('disaster_type')['deaths'].sum().reset_index().sort_values('deaths', ascending=True)
                 fig = px.bar(deaths_by_type, x='deaths', y='disaster_type', orientation='h', title="Deaths by Type")
                 st.plotly_chart(fig, use_container_width=True)
-        
+
         st.markdown("#### Deadliest Events")
         if 'deaths' in df.columns:
             top = df.nlargest(10, 'deaths')[['year', 'country', 'disaster_type', 'event_name', 'deaths']]
             st.dataframe(top, use_container_width=True, hide_index=True)
-    
+
     with tab2:
         yearly = disasters.get_summary_by_year(disaster_type=disaster_type if disaster_type != "All" else None)
         if not yearly.empty:
@@ -73,7 +78,7 @@ if not df.empty:
             with col2:
                 fig = px.line(yearly, x='year', y='deaths', title="Deaths by Year")
                 st.plotly_chart(fig, use_container_width=True)
-    
+
     with tab3:
         display_cols = ['year', 'country', 'disaster_type', 'event_name', 'deaths', 'total_affected', 'damage_usd']
         available_cols = [c for c in display_cols if c in df.columns]
