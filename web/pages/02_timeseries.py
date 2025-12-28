@@ -1,8 +1,8 @@
-"""Unified Time Series - Chart any indicator from any source."""
+"""Unified Time Series - Multi-indicator comparison with dual y-axes."""
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import sys
 from pathlib import Path
 
@@ -10,238 +10,299 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from ingestion.unified_data import UnifiedData
 
 st.set_page_config(page_title="Time Series | Open Data Platform", page_icon="📈", layout="wide")
+st.title("📈 Time Series Analysis")
+st.markdown("Chart and compare indicators across countries and sources")
 
 data = UnifiedData()
 
 # Sidebar
 st.sidebar.header("Configuration")
 
-# Source filter
+# 1. Source filter (multiselect)
 sources = data.get_sources()
-selected_source = st.sidebar.selectbox("Data Source", ["All"] + sources)
-source_filter = None if selected_source == "All" else selected_source
-
-# Category filter
-categories = data.get_categories(source=source_filter)
-selected_category = st.sidebar.selectbox("Category", ["All"] + categories)
-category_filter = None if selected_category == "All" else selected_category
-
-# Get indicators filtered by source AND category
-indicators = data.get_indicators(source=source_filter, category=category_filter)
-if not indicators:
-    st.warning("No indicators available for selected filters.")
-    st.stop()
-
-indicator_options = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in indicators}
-
-# Indicator selection
-selected_indicator = st.sidebar.selectbox(
-    "Select Indicator",
-    options=list(indicator_options.keys()),
-    format_func=lambda x: indicator_options.get(x, x)[:60]
+selected_sources = st.sidebar.multiselect(
+    "Data Sources",
+    options=sources,
+    default=sources
 )
 
-# Countries
-countries = data.get_countries(source=source_filter)
+if not selected_sources:
+    st.warning("Please select at least one data source.")
+    st.stop()
+
+# 2. Category filter (multiselect)
+all_categories = []
+for source in selected_sources:
+    cats = data.get_categories(source=source)
+    all_categories.extend(cats)
+all_categories = sorted(list(set(all_categories)))
+
+selected_categories = st.sidebar.multiselect(
+    "Categories",
+    options=all_categories,
+    default=all_categories[:3] if len(all_categories) > 3 else all_categories
+)
+
+if not selected_categories:
+    st.warning("Please select at least one category.")
+    st.stop()
+
+# 3. Get all indicators for selected sources and categories
+all_indicators = []
+for source in selected_sources:
+    for category in selected_categories:
+        indicators = data.get_indicators(source=source, category=category)
+        all_indicators.extend(indicators)
+
+# Remove duplicates by indicator_code
+seen = set()
+unique_indicators = []
+for ind in all_indicators:
+    if ind['indicator_code'] not in seen:
+        seen.add(ind['indicator_code'])
+        unique_indicators.append(ind)
+
+if not unique_indicators:
+    st.warning("No indicators found for selected filters.")
+    st.stop()
+
+indicator_options = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in unique_indicators}
+
+# 4. Indicator selection (multiselect - up to 4)
+selected_indicators = st.sidebar.multiselect(
+    "Select Indicators (max 4)",
+    options=list(indicator_options.keys()),
+    default=[list(indicator_options.keys())[0]] if indicator_options else [],
+    format_func=lambda x: indicator_options.get(x, x)[:50],
+    max_selections=4
+)
+
+if not selected_indicators:
+    st.info("Please select at least one indicator from the sidebar.")
+    st.stop()
+
+# 5. Countries
+countries = data.get_countries()
 country_options = {c['country_iso3']: c['country_name'] for c in countries}
 
-# Default countries that are likely to have data
 default_countries = []
 for code in ["USA", "CHN", "DEU", "JPN", "BRA"]:
     if code in country_options:
         default_countries.append(code)
-default_countries = default_countries[:5]
 
 selected_countries = st.sidebar.multiselect(
     "Select Countries",
     options=list(country_options.keys()),
-    default=default_countries,
+    default=default_countries[:5],
     format_func=lambda x: country_options.get(x, x)
 )
 
-# Year range
-min_year, max_year = data.get_year_range(source=source_filter)
-year_range = st.sidebar.slider("Year Range", min_year, max_year, (min_year, max_year))
+if not selected_countries:
+    st.warning("Please select at least one country.")
+    st.stop()
 
-# Chart options
+# 6. Year range
+min_year, max_year = data.get_year_range()
+year_range = st.sidebar.slider("Year Range", min_year, max_year, (max(min_year, 1990), max_year))
+
+# 7. Chart options
 st.sidebar.markdown("---")
 st.sidebar.subheader("Chart Options")
-chart_type = st.sidebar.radio("Chart Type", ["Line", "Bar", "Area"])
-show_markers = st.sidebar.checkbox("Show Markers", value=True)
 normalize = st.sidebar.checkbox("Normalize (Index to 100)", value=False)
+show_markers = st.sidebar.checkbox("Show Markers", value=True)
+use_dual_axis = st.sidebar.checkbox("Use Dual Y-Axis", value=len(selected_indicators) > 1)
 
-# Main content
-indicator_name = indicator_options.get(selected_indicator, selected_indicator)
-st.title(f"{indicator_name.split(' (')[0]}")
-st.caption(f"Source: {indicator_name.split('(')[-1].replace(')', '')}" if '(' in indicator_name else "")
-
-# Get data
-if selected_indicator and selected_countries:
+# Fetch data for all selected indicators
+all_data = []
+for ind_code in selected_indicators:
     df = data.get_data(
-        indicator_code=selected_indicator,
+        indicator_code=ind_code,
         countries=selected_countries,
         year_start=year_range[0],
         year_end=year_range[1]
     )
-    
     if not df.empty:
-        # Show which countries have data
-        countries_with_data = df['country_name'].unique().tolist()
-        countries_without_data = [country_options[c] for c in selected_countries if country_options[c] not in countries_with_data]
-        
-        if countries_without_data:
-            st.info(f"ℹ️ No data available for: {', '.join(countries_without_data)}")
-        
-        # Normalize if requested
-        plot_df = df.copy()
-        ylabel = "Value"
-        if normalize and not plot_df.empty:
-            for country in plot_df['country_iso3'].unique():
-                mask = plot_df['country_iso3'] == country
-                country_data = plot_df.loc[mask].sort_values('year')
-                if len(country_data) > 0:
-                    first_value = country_data['value'].iloc[0]
-                    if first_value and first_value != 0:
-                        plot_df.loc[mask, 'value'] = (plot_df.loc[mask, 'value'] / first_value) * 100
-            ylabel = "Index (First Year = 100)"
-        
-        # Create chart
-        if chart_type == "Line":
-            fig = px.line(
-                plot_df, x='year', y='value', color='country_name',
-                markers=show_markers
-            )
-        elif chart_type == "Bar":
-            fig = px.bar(
-                plot_df, x='year', y='value', color='country_name',
-                barmode='group'
-            )
-        else:  # Area
-            fig = px.area(
-                plot_df, x='year', y='value', color='country_name'
-            )
-        
-        fig.update_layout(
-            xaxis_title="Year",
-            yaxis_title=ylabel,
-            hovermode="x unified",
-            legend_title="Country",
-            height=500
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Summary stats
-        st.markdown("### Summary Statistics")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Latest values
-            latest_year = df['year'].max()
-            latest_data = df[df['year'] == latest_year][['country_name', 'value']].sort_values('value', ascending=False)
-            latest_data.columns = ['Country', f'Value ({latest_year})']
-            st.markdown(f"**Latest Values ({latest_year})**")
-            st.dataframe(latest_data, use_container_width=True, hide_index=True)
-        
-        with col2:
-            # Growth rates
-            st.markdown("**Growth (First to Last Year)**")
-            growth_data = []
-            for country in df['country_name'].unique():
-                country_df = df[df['country_name'] == country].sort_values('year')
-                if len(country_df) >= 2:
-                    first_val = country_df['value'].iloc[0]
-                    last_val = country_df['value'].iloc[-1]
-                    if first_val and first_val != 0:
-                        growth = ((last_val - first_val) / first_val) * 100
-                        growth_data.append({'Country': country, 'Growth %': f"{growth:.1f}%"})
-            if growth_data:
-                st.dataframe(pd.DataFrame(growth_data), use_container_width=True, hide_index=True)
-        
-        # Data table
-        st.markdown("### Data Table")
-        pivot_df = df.pivot_table(
-            index='year',
-            columns='country_name',
-            values='value',
-            aggfunc='first'
-        ).reset_index()
-        
-        st.dataframe(pivot_df, use_container_width=True, hide_index=True)
-        
-        # Download
-        csv = df.to_csv(index=False)
-        st.download_button(
-            "📥 Download CSV",
-            data=csv,
-            file_name=f"{selected_indicator}_timeseries.csv",
-            mime="text/csv"
-        )
-    else:
-        st.warning("No data found for selected filters. Try selecting different countries or adjusting the year range.")
+        all_data.append(df)
+
+if not all_data:
+    st.warning("No data found for selected filters.")
+    st.stop()
+
+combined_df = pd.concat(all_data, ignore_index=True)
+
+# Create chart
+if len(selected_indicators) == 1:
+    # Single indicator - simple line chart
+    ind_name = indicator_options.get(selected_indicators[0], selected_indicators[0])
+    st.markdown(f"### {ind_name}")
+    
+    df = all_data[0]
+    
+    if normalize:
+        for country in df['country_iso3'].unique():
+            mask = df['country_iso3'] == country
+            first_val = df.loc[mask].sort_values('year')['value'].iloc[0]
+            if first_val and first_val != 0:
+                df.loc[mask, 'value'] = (df.loc[mask, 'value'] / first_val) * 100
+    
+    fig = go.Figure()
+    for country in df['country_name'].unique():
+        country_df = df[df['country_name'] == country].sort_values('year')
+        fig.add_trace(go.Scatter(
+            x=country_df['year'],
+            y=country_df['value'],
+            mode='lines+markers' if show_markers else 'lines',
+            name=country
+        ))
+    
+    fig.update_layout(
+        xaxis_title="Year",
+        yaxis_title="Index (Base=100)" if normalize else "Value",
+        hovermode="x unified",
+        height=500
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 else:
-    if not selected_countries:
-        st.info("Please select at least one country from the sidebar.")
-    else:
-        st.info("Please select an indicator from the sidebar.")
-
-# Multi-indicator comparison
-st.markdown("---")
-st.markdown("### Compare Multiple Indicators")
-
-with st.expander("Compare different indicators for one country"):
-    compare_country = st.selectbox(
-        "Select Country for Comparison",
-        options=list(country_options.keys()),
-        format_func=lambda x: country_options.get(x, x),
-        key="compare_country"
-    )
+    # Multiple indicators
+    st.markdown("### Multi-Indicator Comparison")
     
-    compare_indicators = st.multiselect(
-        "Select Indicators to Compare",
-        options=list(indicator_options.keys()),
-        format_func=lambda x: indicator_options.get(x, x)[:50],
-        key="compare_indicators"
-    )
-    
-    if compare_country and compare_indicators:
-        compare_df = data.get_multi_indicator_data(
-            indicator_codes=compare_indicators,
-            countries=[compare_country],
-            year_start=year_range[0],
-            year_end=year_range[1]
-        )
+    if len(selected_countries) == 1:
+        # One country, multiple indicators
+        country_name = country_options.get(selected_countries[0], selected_countries[0])
+        st.markdown(f"**Country:** {country_name}")
         
-        if not compare_df.empty:
-            # Normalize for comparison
-            fig = go.Figure()
-            for indicator in compare_indicators:
-                ind_df = compare_df[compare_df['indicator_code'] == indicator].sort_values('year')
-                if not ind_df.empty:
-                    # Normalize to first value = 100
+        if use_dual_axis and len(selected_indicators) >= 2:
+            # Dual y-axis
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+            
+            for i, ind_code in enumerate(selected_indicators):
+                ind_df = combined_df[combined_df['indicator_code'] == ind_code].sort_values('year')
+                ind_name = indicator_options.get(ind_code, ind_code)[:40]
+                
+                if normalize and not ind_df.empty:
                     first_val = ind_df['value'].iloc[0]
                     if first_val and first_val != 0:
-                        normalized = (ind_df['value'] / first_val) * 100
-                    else:
-                        normalized = ind_df['value']
-                    
-                    ind_name = indicator_options.get(indicator, indicator)[:40]
-                    fig.add_trace(go.Scatter(
+                        ind_df = ind_df.copy()
+                        ind_df['value'] = (ind_df['value'] / first_val) * 100
+                
+                secondary = i >= len(selected_indicators) // 2 and len(selected_indicators) > 1
+                
+                fig.add_trace(
+                    go.Scatter(
                         x=ind_df['year'],
-                        y=normalized,
-                        mode='lines+markers',
-                        name=ind_name
-                    ))
+                        y=ind_df['value'],
+                        mode='lines+markers' if show_markers else 'lines',
+                        name=ind_name,
+                        line=dict(color=colors[i % len(colors)])
+                    ),
+                    secondary_y=secondary
+                )
             
             fig.update_layout(
-                title=f"Indicator Comparison - {country_options.get(compare_country, compare_country)} (Indexed to 100)",
                 xaxis_title="Year",
-                yaxis_title="Index (First Year = 100)",
                 hovermode="x unified",
                 height=500
             )
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_yaxes(title_text="Left Axis", secondary_y=False)
+            fig.update_yaxes(title_text="Right Axis", secondary_y=True)
+            
+        else:
+            # Single y-axis (normalized recommended)
+            fig = go.Figure()
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+            
+            for i, ind_code in enumerate(selected_indicators):
+                ind_df = combined_df[combined_df['indicator_code'] == ind_code].sort_values('year')
+                ind_name = indicator_options.get(ind_code, ind_code)[:40]
+                
+                if normalize and not ind_df.empty:
+                    first_val = ind_df['value'].iloc[0]
+                    if first_val and first_val != 0:
+                        ind_df = ind_df.copy()
+                        ind_df['value'] = (ind_df['value'] / first_val) * 100
+                
+                fig.add_trace(go.Scatter(
+                    x=ind_df['year'],
+                    y=ind_df['value'],
+                    mode='lines+markers' if show_markers else 'lines',
+                    name=ind_name,
+                    line=dict(color=colors[i % len(colors)])
+                ))
+            
+            fig.update_layout(
+                xaxis_title="Year",
+                yaxis_title="Index (Base=100)" if normalize else "Value",
+                hovermode="x unified",
+                height=500
+            )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    else:
+        # Multiple countries, multiple indicators - use tabs
+        tab_labels = [indicator_options.get(ind, ind)[:30] for ind in selected_indicators]
+        tabs = st.tabs(tab_labels)
+        
+        for idx, (tab, ind_code) in enumerate(zip(tabs, selected_indicators)):
+            with tab:
+                ind_df = combined_df[combined_df['indicator_code'] == ind_code]
+                ind_name = indicator_options.get(ind_code, ind_code)
+                
+                if normalize and not ind_df.empty:
+                    ind_df = ind_df.copy()
+                    for country in ind_df['country_iso3'].unique():
+                        mask = ind_df['country_iso3'] == country
+                        first_val = ind_df.loc[mask].sort_values('year')['value'].iloc[0]
+                        if first_val and first_val != 0:
+                            ind_df.loc[mask, 'value'] = (ind_df.loc[mask, 'value'] / first_val) * 100
+                
+                fig = go.Figure()
+                for country in ind_df['country_name'].unique():
+                    country_df = ind_df[ind_df['country_name'] == country].sort_values('year')
+                    fig.add_trace(go.Scatter(
+                        x=country_df['year'],
+                        y=country_df['value'],
+                        mode='lines+markers' if show_markers else 'lines',
+                        name=country
+                    ))
+                
+                fig.update_layout(
+                    title=ind_name,
+                    xaxis_title="Year",
+                    yaxis_title="Index (Base=100)" if normalize else "Value",
+                    hovermode="x unified",
+                    height=450
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+# Summary statistics
+st.markdown("---")
+st.markdown("### Summary Statistics")
+
+for ind_code in selected_indicators:
+    ind_df = combined_df[combined_df['indicator_code'] == ind_code]
+    ind_name = indicator_options.get(ind_code, ind_code)
+    
+    if not ind_df.empty:
+        with st.expander(f"📊 {ind_name[:50]}"):
+            latest_year = ind_df['year'].max()
+            latest_data = ind_df[ind_df['year'] == latest_year][['country_name', 'value', 'year']].sort_values('value', ascending=False)
+            latest_data.columns = ['Country', 'Value', 'Year']
+            st.dataframe(latest_data, use_container_width=True, hide_index=True)
+
+# Data download
+st.markdown("---")
+csv = combined_df.to_csv(index=False)
+st.download_button(
+    "📥 Download All Data (CSV)",
+    data=csv,
+    file_name="timeseries_data.csv",
+    mime="text/csv"
+)
 
 # Footer
 st.markdown("---")
-st.caption("**Data Sources:** World Bank, FRED, IMF, OECD, UNHCR, UCDP, UNESCO, UNSD, IRENA")
+st.caption("**Data Sources:** World Bank, IMF, FRED, OECD, UNHCR, UCDP, UNESCO, UNSD, IRENA")

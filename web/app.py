@@ -24,14 +24,14 @@ with col1:
     st.markdown("""
     Welcome to the **Open Data Platform**! This application provides access to:
     
-    - **World Bank** - Development indicators for 44 countries (1970-2023)
-    - **FRED** - Federal Reserve economic data (coming soon)
-    - **IMF** - International Monetary Fund data (coming soon)
-    - **OECD** - Economic statistics (coming soon)
-    - **UNHCR** - Refugee data (coming soon)
-    - **UCDP** - Armed conflict data (coming soon)
-    - **UNESCO** - Education statistics (coming soon)
-    - **IRENA** - Renewable energy data (coming soon)
+    - ✅ **World Bank** - Development indicators for 44 countries (1970-2023)
+    - ✅ **IMF** - International Monetary Fund data (1980-2030)
+    - ⏳ **FRED** - Federal Reserve economic data (coming soon)
+    - ⏳ **OECD** - Economic statistics (coming soon)
+    - ⏳ **UNHCR** - Refugee data (coming soon)
+    - ⏳ **UCDP** - Armed conflict data (coming soon)
+    - ⏳ **UNESCO** - Education statistics (coming soon)
+    - ⏳ **IRENA** - Renewable energy data (coming soon)
     
     Use the sidebar to navigate between different analysis pages.
     """)
@@ -56,6 +56,7 @@ with col2:
             if result:
                 stats = result[0]
                 st.metric("Total Records", f"{stats['records']:,}")
+                st.metric("Sources", stats['sources'])
                 st.metric("Countries", stats['countries'])
                 st.metric("Indicators", stats['indicators'])
                 st.metric("Years", f"{stats['min_year']}-{stats['max_year']}")
@@ -63,6 +64,27 @@ with col2:
             st.info("Loading stats...")
     else:
         st.error("❌ Database Not Connected")
+
+st.markdown("---")
+
+# Source breakdown
+st.markdown("### 📊 Data by Source")
+try:
+    result = db.execute_query("""
+        SELECT source, COUNT(*) as records, 
+               COUNT(DISTINCT indicator_code) as indicators,
+               MIN(year) as min_year, MAX(year) as max_year
+        FROM unified_indicators 
+        GROUP BY source 
+        ORDER BY records DESC
+    """)
+    if result:
+        import pandas as pd
+        df = pd.DataFrame(result)
+        df.columns = ['Source', 'Records', 'Indicators', 'From', 'To']
+        st.dataframe(df, use_container_width=True, hide_index=True)
+except:
+    pass
 
 st.markdown("---")
 
@@ -117,5 +139,5 @@ for i, (name, desc) in enumerate(categories):
         st.caption(desc)
 
 st.markdown("---")
-st.caption("**Data Sources:** World Bank, FRED, IMF, OECD, UNHCR, UCDP, UNESCO, UNSD, IRENA")
-# Updated Sat Dec 27 21:25:55 PST 2025
+st.caption("**Data Sources:** World Bank, IMF, FRED, OECD, UNHCR, UCDP, UNESCO, UNSD, IRENA")
+# Updated Sat Dec 27 21:40:00 PST 2025
