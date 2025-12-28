@@ -27,11 +27,11 @@ with col1:
     - ✅ **World Bank** - Development indicators (1970-2023)
     - ✅ **IMF** - Economic forecasts & fiscal data (1980-2030)
     - ✅ **IRENA** - Renewable energy statistics (2000-2024)
-    - ⏳ **FRED** - Federal Reserve economic data (coming soon)
-    - ⏳ **OECD** - Economic statistics (coming soon)
+    - ✅ **UCDP** - Armed conflict data (1946-2024)
+    - ✅ **Laeven-Valencia** - Banking crisis costs (1980-2008)
+    - ✅ **Reinhart-Rogoff** - Historical crises (1340-2002)
     - ⏳ **UNHCR** - Refugee data (coming soon)
-    - ⏳ **UCDP** - Armed conflict data (coming soon)
-    - ⏳ **UNESCO** - Education statistics (coming soon)
+    - ⏳ **FRED** - Federal Reserve data (coming soon)
     
     Use the sidebar to navigate between different analysis pages.
     """)
@@ -83,6 +83,16 @@ try:
         import pandas as pd
         df = pd.DataFrame(result)
         df.columns = ['Source', 'Records', 'Indicators', 'Countries', 'From', 'To']
+        # Map source codes to full names
+        source_names = {
+            'WB': 'World Bank',
+            'IMF': 'IMF',
+            'IRENA': 'IRENA',
+            'UCDP': 'UCDP',
+            'LV': 'Laeven-Valencia',
+            'RR': 'Reinhart-Rogoff'
+        }
+        df['Source'] = df['Source'].map(lambda x: source_names.get(x, x))
         st.dataframe(df, use_container_width=True, hide_index=True)
 except:
     pass
@@ -121,24 +131,23 @@ st.markdown("---")
 st.markdown("### 📁 Data Categories")
 
 categories = [
-    ("💰 Economy", "GDP, GNI, trade, exports, imports"),
-    ("👷 Labor", "Unemployment, labor force, employment"),
-    ("📈 Prices", "Inflation, CPI, deflators"),
-    ("👥 Population", "Total, growth, urban, age structure"),
-    ("🏚️ Poverty", "Poverty rates, Gini index, inequality"),
-    ("🏥 Health", "Life expectancy, mortality, healthcare"),
-    ("🎓 Education", "Literacy, enrollment, expenditure"),
-    ("🏗️ Infrastructure", "Internet, electricity, transport"),
-    ("🌍 Environment", "CO2 emissions, renewables, forest"),
-    ("🏦 Finance", "Interest rates, credit, FDI, debt"),
+    ("💰 Economy", "GDP, GNI, trade"),
+    ("👷 Labor", "Unemployment"),
+    ("📈 Prices", "Inflation, CPI"),
+    ("👥 Population", "Total, growth"),
+    ("🏥 Health", "Life expectancy"),
+    ("🎓 Education", "Literacy"),
+    ("🌍 Environment", "CO2, renewables"),
+    ("🏦 Finance", "Debt, crises"),
+    ("🔒 Security", "Conflicts"),
 ]
 
-cols = st.columns(5)
+cols = st.columns(len(categories))
 for i, (name, desc) in enumerate(categories):
-    with cols[i % 5]:
+    with cols[i]:
         st.markdown(f"**{name}**")
         st.caption(desc)
 
 st.markdown("---")
-st.caption("**Data Sources:** World Bank, IMF, IRENA | More sources coming soon")
-# Updated Sat Dec 28 00:15:00 PST 2025
+st.caption("**Data Sources:** World Bank, IMF, IRENA, UCDP, Laeven-Valencia, Reinhart-Rogoff")
+# Updated Sat Dec 28 00:45:00 PST 2025
