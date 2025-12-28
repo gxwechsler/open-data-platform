@@ -10,8 +10,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from ingestion.unified_data import UnifiedData
 
 st.set_page_config(page_title="Time Series | Open Data Platform", page_icon="📈", layout="wide")
-st.title("📈 Time Series Analysis")
-st.markdown("Chart and compare indicators across countries and sources")
 
 data = UnifiedData()
 
@@ -23,7 +21,7 @@ sources = data.get_sources()
 selected_source = st.sidebar.selectbox("Data Source", ["All"] + sources)
 source_filter = None if selected_source == "All" else selected_source
 
-# Category filter (NEW)
+# Category filter
 categories = data.get_categories(source=source_filter)
 selected_category = st.sidebar.selectbox("Category", ["All"] + categories)
 category_filter = None if selected_category == "All" else selected_category
@@ -47,10 +45,17 @@ selected_indicator = st.sidebar.selectbox(
 countries = data.get_countries(source=source_filter)
 country_options = {c['country_iso3']: c['country_name'] for c in countries}
 
+# Default countries that are likely to have data
+default_countries = []
+for code in ["USA", "CHN", "DEU", "JPN", "BRA"]:
+    if code in country_options:
+        default_countries.append(code)
+default_countries = default_countries[:5]
+
 selected_countries = st.sidebar.multiselect(
     "Select Countries",
     options=list(country_options.keys()),
-    default=["USA", "CHN", "DEU", "JPN", "BRA"][:min(5, len(country_options))],
+    default=default_countries,
     format_func=lambda x: country_options.get(x, x)
 )
 
@@ -65,6 +70,11 @@ chart_type = st.sidebar.radio("Chart Type", ["Line", "Bar", "Area"])
 show_markers = st.sidebar.checkbox("Show Markers", value=True)
 normalize = st.sidebar.checkbox("Normalize (Index to 100)", value=False)
 
+# Main content
+indicator_name = indicator_options.get(selected_indicator, selected_indicator)
+st.title(f"{indicator_name.split(' (')[0]}")
+st.caption(f"Source: {indicator_name.split('(')[-1].replace(')', '')}" if '(' in indicator_name else "")
+
 # Get data
 if selected_indicator and selected_countries:
     df = data.get_data(
@@ -75,40 +85,45 @@ if selected_indicator and selected_countries:
     )
     
     if not df.empty:
-        # Get indicator name for title
-        indicator_name = indicator_options.get(selected_indicator, selected_indicator)
+        # Show which countries have data
+        countries_with_data = df['country_name'].unique().tolist()
+        countries_without_data = [country_options[c] for c in selected_countries if country_options[c] not in countries_with_data]
+        
+        if countries_without_data:
+            st.info(f"ℹ️ No data available for: {', '.join(countries_without_data)}")
         
         # Normalize if requested
-        if normalize:
-            # Index to first year = 100
-            for country in df['country_iso3'].unique():
-                mask = df['country_iso3'] == country
-                first_value = df.loc[mask, 'value'].iloc[0]
-                if first_value and first_value != 0:
-                    df.loc[mask, 'value'] = (df.loc[mask, 'value'] / first_value) * 100
-            indicator_name += " (Indexed to 100)"
+        plot_df = df.copy()
+        ylabel = "Value"
+        if normalize and not plot_df.empty:
+            for country in plot_df['country_iso3'].unique():
+                mask = plot_df['country_iso3'] == country
+                country_data = plot_df.loc[mask].sort_values('year')
+                if len(country_data) > 0:
+                    first_value = country_data['value'].iloc[0]
+                    if first_value and first_value != 0:
+                        plot_df.loc[mask, 'value'] = (plot_df.loc[mask, 'value'] / first_value) * 100
+            ylabel = "Index (First Year = 100)"
         
         # Create chart
-        st.markdown(f"### {indicator_name}")
-        
         if chart_type == "Line":
             fig = px.line(
-                df, x='year', y='value', color='country_name',
+                plot_df, x='year', y='value', color='country_name',
                 markers=show_markers
             )
         elif chart_type == "Bar":
             fig = px.bar(
-                df, x='year', y='value', color='country_name',
+                plot_df, x='year', y='value', color='country_name',
                 barmode='group'
             )
         else:  # Area
             fig = px.area(
-                df, x='year', y='value', color='country_name'
+                plot_df, x='year', y='value', color='country_name'
             )
         
         fig.update_layout(
             xaxis_title="Year",
-            yaxis_title="Value",
+            yaxis_title=ylabel,
             hovermode="x unified",
             legend_title="Country",
             height=500
@@ -163,9 +178,12 @@ if selected_indicator and selected_countries:
             mime="text/csv"
         )
     else:
-        st.warning("No data found for selected filters.")
+        st.warning("No data found for selected filters. Try selecting different countries or adjusting the year range.")
 else:
-    st.info("Please select an indicator and at least one country.")
+    if not selected_countries:
+        st.info("Please select at least one country from the sidebar.")
+    else:
+        st.info("Please select an indicator from the sidebar.")
 
 # Multi-indicator comparison
 st.markdown("---")
