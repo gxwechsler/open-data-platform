@@ -26,12 +26,12 @@ with col1:
     
     - ✅ **World Bank** - Development indicators (1970-2023)
     - ✅ **IMF** - Economic forecasts & fiscal data (1980-2030)
+    - ✅ **FRED** - US Federal Reserve data (1950-2025)
     - ✅ **IRENA** - Renewable energy statistics (2000-2024)
     - ✅ **UCDP** - Armed conflict data (1946-2024)
     - ✅ **Laeven-Valencia** - Banking crisis costs (1980-2008)
     - ✅ **Reinhart-Rogoff** - Historical crises (1340-2002)
     - ⏳ **UNHCR** - Refugee data (coming soon)
-    - ⏳ **FRED** - Federal Reserve data (coming soon)
     
     Use the sidebar to navigate between different analysis pages.
     """)
@@ -41,7 +41,6 @@ with col2:
     if db.is_connected():
         st.success("✅ Database Connected")
         
-        # Get stats from unified_indicators
         try:
             result = db.execute_query("""
                 SELECT 
@@ -83,10 +82,10 @@ try:
         import pandas as pd
         df = pd.DataFrame(result)
         df.columns = ['Source', 'Records', 'Indicators', 'Countries', 'From', 'To']
-        # Map source codes to full names
         source_names = {
             'WB': 'World Bank',
             'IMF': 'IMF',
+            'FRED': 'FRED',
             'IRENA': 'IRENA',
             'UCDP': 'UCDP',
             'LV': 'Laeven-Valencia',
@@ -126,28 +125,5 @@ with col3:
     """)
 
 st.markdown("---")
-
-# Categories overview
-st.markdown("### 📁 Data Categories")
-
-categories = [
-    ("💰 Economy", "GDP, GNI, trade"),
-    ("👷 Labor", "Unemployment"),
-    ("📈 Prices", "Inflation, CPI"),
-    ("👥 Population", "Total, growth"),
-    ("🏥 Health", "Life expectancy"),
-    ("🎓 Education", "Literacy"),
-    ("🌍 Environment", "CO2, renewables"),
-    ("🏦 Finance", "Debt, crises"),
-    ("🔒 Security", "Conflicts"),
-]
-
-cols = st.columns(len(categories))
-for i, (name, desc) in enumerate(categories):
-    with cols[i]:
-        st.markdown(f"**{name}**")
-        st.caption(desc)
-
-st.markdown("---")
-st.caption("**Data Sources:** World Bank, IMF, IRENA, UCDP, Laeven-Valencia, Reinhart-Rogoff")
-# Updated Sat Dec 28 00:45:00 PST 2025
+st.caption("**Data Sources:** World Bank, IMF, FRED, IRENA, UCDP, Laeven-Valencia, Reinhart-Rogoff")
+# Updated Sat Dec 28 01:00:00 PST 2025
