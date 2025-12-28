@@ -66,7 +66,9 @@ if not unique_indicators:
     st.warning("No indicators found for selected filters.")
     st.stop()
 
+# Build indicator options with units info
 indicator_options = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in unique_indicators}
+indicator_units = {i['indicator_code']: i.get('units', '') for i in unique_indicators}
 
 # 4. Indicator selection (multiselect - up to 4)
 selected_indicators = st.sidebar.multiselect(
@@ -130,10 +132,23 @@ if not all_data:
 
 combined_df = pd.concat(all_data, ignore_index=True)
 
+# Get units for selected indicators
+def get_units_label(ind_code):
+    """Get units label for indicator."""
+    if normalize:
+        return "Index (Base=100)"
+    units = indicator_units.get(ind_code, '')
+    if units:
+        return units
+    return "Value"
+
 # Create chart
 if len(selected_indicators) == 1:
     # Single indicator - simple line chart
-    ind_name = indicator_options.get(selected_indicators[0], selected_indicators[0])
+    ind_code = selected_indicators[0]
+    ind_name = indicator_options.get(ind_code, ind_code)
+    units_label = get_units_label(ind_code)
+    
     st.markdown(f"### {ind_name}")
     
     df = all_data[0]
@@ -157,7 +172,7 @@ if len(selected_indicators) == 1:
     
     fig.update_layout(
         xaxis_title="Year",
-        yaxis_title="Index (Base=100)" if normalize else "Value",
+        yaxis_title=units_label,
         hovermode="x unified",
         height=500
     )
@@ -178,6 +193,13 @@ else:
             
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
             
+            # Get units for left and right axes
+            left_indicators = selected_indicators[:len(selected_indicators)//2 + len(selected_indicators)%2]
+            right_indicators = selected_indicators[len(selected_indicators)//2 + len(selected_indicators)%2:]
+            
+            left_units = get_units_label(left_indicators[0]) if left_indicators else "Value"
+            right_units = get_units_label(right_indicators[0]) if right_indicators else "Value"
+            
             for i, ind_code in enumerate(selected_indicators):
                 ind_df = combined_df[combined_df['indicator_code'] == ind_code].sort_values('year')
                 ind_name = indicator_options.get(ind_code, ind_code)[:40]
@@ -188,7 +210,7 @@ else:
                         ind_df = ind_df.copy()
                         ind_df['value'] = (ind_df['value'] / first_val) * 100
                 
-                secondary = i >= len(selected_indicators) // 2 and len(selected_indicators) > 1
+                secondary = ind_code in right_indicators
                 
                 fig.add_trace(
                     go.Scatter(
@@ -206,13 +228,16 @@ else:
                 hovermode="x unified",
                 height=500
             )
-            fig.update_yaxes(title_text="Left Axis", secondary_y=False)
-            fig.update_yaxes(title_text="Right Axis", secondary_y=True)
+            fig.update_yaxes(title_text=left_units, secondary_y=False)
+            fig.update_yaxes(title_text=right_units, secondary_y=True)
             
         else:
             # Single y-axis (normalized recommended)
             fig = go.Figure()
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+            
+            # Use first indicator's units or "Value" if mixed
+            units_label = get_units_label(selected_indicators[0])
             
             for i, ind_code in enumerate(selected_indicators):
                 ind_df = combined_df[combined_df['indicator_code'] == ind_code].sort_values('year')
@@ -234,7 +259,7 @@ else:
             
             fig.update_layout(
                 xaxis_title="Year",
-                yaxis_title="Index (Base=100)" if normalize else "Value",
+                yaxis_title=units_label,
                 hovermode="x unified",
                 height=500
             )
@@ -250,6 +275,7 @@ else:
             with tab:
                 ind_df = combined_df[combined_df['indicator_code'] == ind_code]
                 ind_name = indicator_options.get(ind_code, ind_code)
+                units_label = get_units_label(ind_code)
                 
                 if normalize and not ind_df.empty:
                     ind_df = ind_df.copy()
@@ -272,7 +298,7 @@ else:
                 fig.update_layout(
                     title=ind_name,
                     xaxis_title="Year",
-                    yaxis_title="Index (Base=100)" if normalize else "Value",
+                    yaxis_title=units_label,
                     hovermode="x unified",
                     height=450
                 )
@@ -285,12 +311,13 @@ st.markdown("### Summary Statistics")
 for ind_code in selected_indicators:
     ind_df = combined_df[combined_df['indicator_code'] == ind_code]
     ind_name = indicator_options.get(ind_code, ind_code)
+    units = indicator_units.get(ind_code, '')
     
     if not ind_df.empty:
         with st.expander(f"📊 {ind_name[:50]}"):
             latest_year = ind_df['year'].max()
             latest_data = ind_df[ind_df['year'] == latest_year][['country_name', 'value', 'year']].sort_values('value', ascending=False)
-            latest_data.columns = ['Country', 'Value', 'Year']
+            latest_data.columns = ['Country', f'Value ({units})' if units else 'Value', 'Year']
             st.dataframe(latest_data, use_container_width=True, hide_index=True)
 
 # Data download
@@ -305,4 +332,4 @@ st.download_button(
 
 # Footer
 st.markdown("---")
-st.caption("**Data Sources:** World Bank, IMF, FRED, OECD, UNHCR, UCDP, UNESCO, UNSD, IRENA")
+st.caption("**Data Sources:** World Bank, IMF, IRENA | More sources coming soon")
