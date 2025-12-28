@@ -118,3 +118,4 @@ for i, (name, desc) in enumerate(categories):
 
 st.markdown("---")
 st.caption("**Data Sources:** World Bank, FRED, IMF, OECD, UNHCR, UCDP, UNESCO, UNSD, IRENA")
+# Updated Sat Dec 27 21:25:55 PST 2025
