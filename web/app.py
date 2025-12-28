@@ -24,14 +24,14 @@ with col1:
     st.markdown("""
     Welcome to the **Open Data Platform**! This application provides access to:
     
-    - ✅ **World Bank** - Development indicators for 44 countries (1970-2023)
-    - ✅ **IMF** - International Monetary Fund data (1980-2030)
+    - ✅ **World Bank** - Development indicators (1970-2023)
+    - ✅ **IMF** - Economic forecasts & fiscal data (1980-2030)
+    - ✅ **IRENA** - Renewable energy statistics (2000-2024)
     - ⏳ **FRED** - Federal Reserve economic data (coming soon)
     - ⏳ **OECD** - Economic statistics (coming soon)
     - ⏳ **UNHCR** - Refugee data (coming soon)
     - ⏳ **UCDP** - Armed conflict data (coming soon)
     - ⏳ **UNESCO** - Education statistics (coming soon)
-    - ⏳ **IRENA** - Renewable energy data (coming soon)
     
     Use the sidebar to navigate between different analysis pages.
     """)
@@ -73,6 +73,7 @@ try:
     result = db.execute_query("""
         SELECT source, COUNT(*) as records, 
                COUNT(DISTINCT indicator_code) as indicators,
+               COUNT(DISTINCT country_iso3) as countries,
                MIN(year) as min_year, MAX(year) as max_year
         FROM unified_indicators 
         GROUP BY source 
@@ -81,7 +82,7 @@ try:
     if result:
         import pandas as pd
         df = pd.DataFrame(result)
-        df.columns = ['Source', 'Records', 'Indicators', 'From', 'To']
+        df.columns = ['Source', 'Records', 'Indicators', 'Countries', 'From', 'To']
         st.dataframe(df, use_container_width=True, hide_index=True)
 except:
     pass
@@ -128,7 +129,7 @@ categories = [
     ("🏥 Health", "Life expectancy, mortality, healthcare"),
     ("🎓 Education", "Literacy, enrollment, expenditure"),
     ("🏗️ Infrastructure", "Internet, electricity, transport"),
-    ("🌍 Environment", "CO2 emissions, forest, renewable energy"),
+    ("🌍 Environment", "CO2 emissions, renewables, forest"),
     ("🏦 Finance", "Interest rates, credit, FDI, debt"),
 ]
 
@@ -139,5 +140,5 @@ for i, (name, desc) in enumerate(categories):
         st.caption(desc)
 
 st.markdown("---")
-st.caption("**Data Sources:** World Bank, IMF, FRED, OECD, UNHCR, UCDP, UNESCO, UNSD, IRENA")
-# Updated Sat Dec 27 21:40:00 PST 2025
+st.caption("**Data Sources:** World Bank, IMF, IRENA | More sources coming soon")
+# Updated Sat Dec 28 00:15:00 PST 2025
