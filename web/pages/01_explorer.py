@@ -14,32 +14,72 @@ st.markdown("Browse indicators from all data sources")
 
 data = UnifiedData()
 
+# Initialize session state
+if 'exp_source' not in st.session_state:
+    st.session_state.exp_source = "All"
+if 'exp_category' not in st.session_state:
+    st.session_state.exp_category = "All"
+if 'exp_indicator' not in st.session_state:
+    st.session_state.exp_indicator = "All"
+if 'exp_countries' not in st.session_state:
+    st.session_state.exp_countries = None
+if 'exp_year_start' not in st.session_state:
+    st.session_state.exp_year_start = 1990
+if 'exp_year_end' not in st.session_state:
+    st.session_state.exp_year_end = 2024
+if 'exp_search' not in st.session_state:
+    st.session_state.exp_search = ""
+
 # Sidebar filters
 st.sidebar.header("Filters")
 
 # 1. Source filter
 sources = data.get_sources()
-selected_source = st.sidebar.selectbox("Data Source", ["All"] + sources)
+source_options = ["All"] + sources
+selected_source = st.sidebar.selectbox(
+    "Data Source", 
+    source_options,
+    index=source_options.index(st.session_state.exp_source) if st.session_state.exp_source in source_options else 0,
+    key="exp_source_select"
+)
+st.session_state.exp_source = selected_source
 source_filter = None if selected_source == "All" else selected_source
 
 # 2. Category filter
 categories = data.get_categories(source=source_filter)
-selected_category = st.sidebar.selectbox("Category", ["All"] + categories)
+category_options = ["All"] + categories
+selected_category = st.sidebar.selectbox(
+    "Category", 
+    category_options,
+    index=category_options.index(st.session_state.exp_category) if st.session_state.exp_category in category_options else 0,
+    key="exp_category_select"
+)
+st.session_state.exp_category = selected_category
 category_filter = None if selected_category == "All" else selected_category
 
 # 3. Indicator filter (based on source and category)
 indicators = data.get_indicators(source=source_filter, category=category_filter)
 indicator_options = {i['indicator_code']: i['indicator_name'] for i in indicators}
+indicator_list = ["All"] + list(indicator_options.keys())
 selected_indicator = st.sidebar.selectbox(
     "Indicator", 
-    options=["All"] + list(indicator_options.keys()),
-    format_func=lambda x: indicator_options.get(x, x) if x != "All" else "All"
+    options=indicator_list,
+    index=indicator_list.index(st.session_state.exp_indicator) if st.session_state.exp_indicator in indicator_list else 0,
+    format_func=lambda x: indicator_options.get(x, x) if x != "All" else "All",
+    key="exp_indicator_select"
 )
+st.session_state.exp_indicator = selected_indicator
 indicator_filter = None if selected_indicator == "All" else selected_indicator
 
 # Search (optional additional filter)
 st.sidebar.markdown("---")
-search_term = st.sidebar.text_input("Search Indicators", placeholder="e.g., GDP, unemployment")
+search_term = st.sidebar.text_input(
+    "Search Indicators", 
+    value=st.session_state.exp_search,
+    placeholder="e.g., GDP, unemployment",
+    key="exp_search_input"
+)
+st.session_state.exp_search = search_term
 
 # Apply search filter if provided
 if search_term:
@@ -76,19 +116,36 @@ if indicator_filter:
     
     # Country and year selection
     countries = data.get_countries(source=source_filter)
-    country_options = {c['country_iso3']: c['country_name'] for c in countries}
+    country_options_dict = {c['country_iso3']: c['country_name'] for c in countries}
+    
+    # Set default countries
+    if st.session_state.exp_countries is None:
+        st.session_state.exp_countries = list(country_options_dict.keys())[:5]
+    
+    valid_countries = [c for c in st.session_state.exp_countries if c in country_options_dict]
+    if not valid_countries:
+        valid_countries = list(country_options_dict.keys())[:5]
     
     col1, col2 = st.columns(2)
     with col1:
         selected_countries = st.multiselect(
             "Select Countries",
-            options=list(country_options.keys()),
-            default=list(country_options.keys())[:5],
-            format_func=lambda x: country_options.get(x, x)
+            options=list(country_options_dict.keys()),
+            default=valid_countries,
+            format_func=lambda x: country_options_dict.get(x, x),
+            key="exp_countries_select"
         )
+        st.session_state.exp_countries = selected_countries
     with col2:
         min_year, max_year = data.get_year_range(source=source_filter)
-        year_range = st.slider("Year Range", min_year, max_year, (min_year, max_year))
+        year_range = st.slider(
+            "Year Range", 
+            min_year, max_year, 
+            (max(min_year, st.session_state.exp_year_start), min(max_year, st.session_state.exp_year_end)),
+            key="exp_year_slider"
+        )
+        st.session_state.exp_year_start = year_range[0]
+        st.session_state.exp_year_end = year_range[1]
     
     if selected_countries:
         df = data.get_data(
@@ -157,4 +214,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.caption("**Data Sources:** World Bank, FRED, IMF, OECD, UNHCR, UCDP, UNESCO, UNSD, IRENA")
+st.caption("**Data Sources:** World Bank, FRED, IMF, UNHCR, UCDP, IRENA, EM-DAT, Laeven-Valencia, Reinhart-Rogoff")
