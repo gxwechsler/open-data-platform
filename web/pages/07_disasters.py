@@ -13,6 +13,19 @@ st.title("🌪️ Natural Disasters Database")
 
 db = get_db_manager()
 
+# Country ISO3 to name mapping
+COUNTRY_NAMES = {
+    "CHN": "China", "JPN": "Japan", "USA": "United States", "TUR": "Turkey",
+    "IRN": "Iran", "IND": "India", "ITA": "Italy", "MEX": "Mexico",
+    "CHL": "Chile", "NZL": "New Zealand", "COL": "Colombia", "DZA": "Algeria",
+    "MAR": "Morocco", "DEU": "Germany", "GBR": "United Kingdom", "AUS": "Australia",
+    "BRA": "Brazil", "NER": "Niger", "ETH": "Ethiopia", "GHA": "Ghana",
+    "VNM": "Vietnam", "FRA": "France", "ESP": "Spain", "NLD": "Netherlands",
+    "CAN": "Canada", "ZAF": "South Africa", "PRT": "Portugal", "COD": "DR Congo",
+    "HTI": "Haiti", "PAK": "Pakistan", "BGD": "Bangladesh", "PHL": "Philippines",
+    "IDN": "Indonesia", "MMR": "Myanmar", "THA": "Thailand", "KOR": "South Korea"
+}
+
 # Get filter options from database
 @st.cache_data(ttl=300)
 def get_disaster_types():
@@ -26,14 +39,8 @@ def get_disaster_groups():
 
 @st.cache_data(ttl=300)
 def get_countries():
-    result = db.execute_query("""
-        SELECT DISTINCT d.country_iso3, c.name as country
-        FROM disasters d
-        LEFT JOIN countries c ON d.country_iso3 = c.iso3
-        WHERE d.country_iso3 IS NOT NULL
-        ORDER BY c.name
-    """)
-    return result if result else []
+    result = db.execute_query("SELECT DISTINCT country_iso3 FROM disasters WHERE country_iso3 IS NOT NULL ORDER BY country_iso3")
+    return [r['country_iso3'] for r in result] if result else []
 
 @st.cache_data(ttl=300)
 def get_year_range():
@@ -55,49 +62,42 @@ min_year, max_year = get_year_range()
 year_range = st.sidebar.slider("Year Range", min_year, max_year, (min_year, max_year))
 
 countries = get_countries()
-country_options = {}
-for c in countries:
-    iso = c.get('country_iso3')
-    name = c.get('country') or iso
-    if iso:
-        country_options[iso] = name
-
 selected_country = st.sidebar.selectbox(
     "Country", 
-    ["All"] + list(country_options.keys()), 
-    format_func=lambda x: country_options.get(x, x) if x != "All" else "All"
+    ["All"] + countries, 
+    format_func=lambda x: COUNTRY_NAMES.get(x, x) if x != "All" else "All"
 )
 
 # Build query
 def get_disaster_data(disaster_type=None, disaster_group=None, country=None, year_start=None, year_end=None):
-    query = """
-        SELECT d.*, c.name as country
-        FROM disasters d
-        LEFT JOIN countries c ON d.country_iso3 = c.iso3
-        WHERE 1=1
-    """
+    query = "SELECT * FROM disasters WHERE 1=1"
     params = []
     
     if disaster_type:
-        query += " AND d.disaster_type = %s"
+        query += " AND disaster_type = %s"
         params.append(disaster_type)
     if disaster_group:
-        query += " AND d.disaster_group = %s"
+        query += " AND disaster_group = %s"
         params.append(disaster_group)
     if country:
-        query += " AND d.country_iso3 = %s"
+        query += " AND country_iso3 = %s"
         params.append(country)
     if year_start:
-        query += " AND d.year >= %s"
+        query += " AND year >= %s"
         params.append(year_start)
     if year_end:
-        query += " AND d.year <= %s"
+        query += " AND year <= %s"
         params.append(year_end)
     
-    query += " ORDER BY d.year DESC, d.deaths DESC NULLS LAST"
+    query += " ORDER BY year DESC, deaths DESC NULLS LAST"
     
     result = db.execute_query(query, tuple(params) if params else None)
-    return pd.DataFrame(result) if result else pd.DataFrame()
+    if result:
+        df = pd.DataFrame(result)
+        # Add country names
+        df['country'] = df['country_iso3'].map(lambda x: COUNTRY_NAMES.get(x, x))
+        return df
+    return pd.DataFrame()
 
 # Get data
 df = get_disaster_data(
