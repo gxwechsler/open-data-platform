@@ -26,6 +26,18 @@ COUNTRY_NAMES = {
     "IDN": "Indonesia", "MMR": "Myanmar", "THA": "Thailand", "KOR": "South Korea"
 }
 
+# Initialize session state for filters
+if 'disaster_type' not in st.session_state:
+    st.session_state.disaster_type = "All"
+if 'disaster_group' not in st.session_state:
+    st.session_state.disaster_group = "All"
+if 'disaster_country' not in st.session_state:
+    st.session_state.disaster_country = "All"
+if 'disaster_year_start' not in st.session_state:
+    st.session_state.disaster_year_start = 1976
+if 'disaster_year_end' not in st.session_state:
+    st.session_state.disaster_year_end = 2024
+
 # Get filter options from database
 @st.cache_data(ttl=300)
 def get_disaster_types():
@@ -49,24 +61,46 @@ def get_year_range():
         return int(result[0]['min_year']), int(result[0]['max_year'])
     return 1976, 2024
 
-# Sidebar filters
+# Sidebar filters with session state
 st.sidebar.header("Filters")
 
 disaster_types = get_disaster_types()
-disaster_type = st.sidebar.selectbox("Disaster Type", ["All"] + disaster_types)
+disaster_type = st.sidebar.selectbox(
+    "Disaster Type", 
+    ["All"] + disaster_types,
+    index=(["All"] + disaster_types).index(st.session_state.disaster_type) if st.session_state.disaster_type in ["All"] + disaster_types else 0,
+    key="disaster_type_select"
+)
+st.session_state.disaster_type = disaster_type
 
 disaster_groups = get_disaster_groups()
-disaster_group = st.sidebar.selectbox("Disaster Group", ["All"] + disaster_groups)
+disaster_group = st.sidebar.selectbox(
+    "Disaster Group", 
+    ["All"] + disaster_groups,
+    index=(["All"] + disaster_groups).index(st.session_state.disaster_group) if st.session_state.disaster_group in ["All"] + disaster_groups else 0,
+    key="disaster_group_select"
+)
+st.session_state.disaster_group = disaster_group
 
 min_year, max_year = get_year_range()
-year_range = st.sidebar.slider("Year Range", min_year, max_year, (min_year, max_year))
+year_range = st.sidebar.slider(
+    "Year Range", 
+    min_year, max_year, 
+    (st.session_state.disaster_year_start, st.session_state.disaster_year_end),
+    key="disaster_year_slider"
+)
+st.session_state.disaster_year_start = year_range[0]
+st.session_state.disaster_year_end = year_range[1]
 
 countries = get_countries()
 selected_country = st.sidebar.selectbox(
     "Country", 
-    ["All"] + countries, 
-    format_func=lambda x: COUNTRY_NAMES.get(x, x) if x != "All" else "All"
+    ["All"] + countries,
+    index=(["All"] + countries).index(st.session_state.disaster_country) if st.session_state.disaster_country in ["All"] + countries else 0,
+    format_func=lambda x: COUNTRY_NAMES.get(x, x) if x != "All" else "All",
+    key="disaster_country_select"
 )
+st.session_state.disaster_country = selected_country
 
 # Build query with named parameters for SQLAlchemy
 def get_disaster_data(disaster_type=None, disaster_group=None, country=None, year_start=None, year_end=None):
@@ -94,7 +128,6 @@ def get_disaster_data(disaster_type=None, disaster_group=None, country=None, yea
     result = db.execute_query(query, params if params else None)
     if result:
         df = pd.DataFrame(result)
-        # Add country names
         df['country'] = df['country_iso3'].map(lambda x: COUNTRY_NAMES.get(x, x))
         return df
     return pd.DataFrame()
