@@ -27,11 +27,12 @@ with col1:
     - ✅ **World Bank** - Development indicators (1970-2023)
     - ✅ **IMF** - Economic forecasts & fiscal data (1980-2030)
     - ✅ **FRED** - US Federal Reserve data (1950-2025)
+    - ✅ **UNHCR** - Refugee & displacement data (2000-2024)
     - ✅ **IRENA** - Renewable energy statistics (2000-2024)
     - ✅ **UCDP** - Armed conflict data (1946-2024)
+    - ✅ **EM-DAT** - Natural disaster data (1976-2024)
     - ✅ **Laeven-Valencia** - Banking crisis costs (1980-2008)
     - ✅ **Reinhart-Rogoff** - Historical crises (1340-2002)
-    - ⏳ **UNHCR** - Refugee data (coming soon)
     
     Use the sidebar to navigate between different analysis pages.
     """)
@@ -86,8 +87,10 @@ try:
             'WB': 'World Bank',
             'IMF': 'IMF',
             'FRED': 'FRED',
+            'UNHCR': 'UNHCR',
             'IRENA': 'IRENA',
             'UCDP': 'UCDP',
+            'EMDAT': 'EM-DAT',
             'LV': 'Laeven-Valencia',
             'RR': 'Reinhart-Rogoff'
         }
@@ -125,5 +128,5 @@ with col3:
     """)
 
 st.markdown("---")
-st.caption("**Data Sources:** World Bank, IMF, FRED, IRENA, UCDP, Laeven-Valencia, Reinhart-Rogoff")
-# Updated Sat Dec 28 01:00:00 PST 2025
+st.caption("**Data Sources:** World Bank, IMF, FRED, UNHCR, IRENA, UCDP, EM-DAT, Laeven-Valencia, Reinhart-Rogoff")
+# Updated Sun Dec 29 2025
