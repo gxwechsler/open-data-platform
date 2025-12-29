@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 import sys
 from pathlib import Path
@@ -14,50 +15,41 @@ st.title("📈 Time Series Analysis")
 
 data = UnifiedData()
 
-# --- Initialize logical state (saved_ prefix) ---
-if 'saved_ts_sources' not in st.session_state:
-    st.session_state.saved_ts_sources = None
-if 'saved_ts_cats' not in st.session_state:
-    st.session_state.saved_ts_cats = None
-if 'saved_ts_inds' not in st.session_state:
-    st.session_state.saved_ts_inds = None
-if 'saved_ts_cos' not in st.session_state:
-    st.session_state.saved_ts_cos = None
-if 'saved_ts_yr' not in st.session_state:
+# --- Initialize logical state ---
+# Use 'initialized_ts' flag to track first load vs navigation
+if 'initialized_ts' not in st.session_state:
+    st.session_state.initialized_ts = False
+    st.session_state.saved_ts_sources = []  # Empty on first load
+    st.session_state.saved_ts_cats = []
+    st.session_state.saved_ts_inds = []
+    st.session_state.saved_ts_cos = []
     st.session_state.saved_ts_yr = None
-if 'saved_ts_norm' not in st.session_state:
     st.session_state.saved_ts_norm = False
-if 'saved_ts_markers' not in st.session_state:
     st.session_state.saved_ts_markers = True
-if 'saved_ts_dual' not in st.session_state:
     st.session_state.saved_ts_dual = False
 
 st.sidebar.header("Configuration")
 
 # --- Sources ---
 sources = data.get_sources()
-if st.session_state.saved_ts_sources is None:
-    st.session_state.saved_ts_sources = sources
-default_src = [s for s in st.session_state.saved_ts_sources if s in sources] or sources
+default_src = [s for s in st.session_state.saved_ts_sources if s in sources]
 
 sel_sources = st.sidebar.multiselect("Sources", sources, default=default_src, key="widget_ts_src")
 st.session_state.saved_ts_sources = sel_sources
 
 if not sel_sources:
-    st.warning("Select at least one source.")
+    st.info("👈 Select at least one **Source** to begin.")
     st.stop()
 
 # --- Categories ---
 all_cats = sorted(set(c for s in sel_sources for c in data.get_categories(source=s)))
-if st.session_state.saved_ts_cats is None:
-    st.session_state.saved_ts_cats = all_cats[:3] if len(all_cats) >= 3 else all_cats
-default_cats = [c for c in st.session_state.saved_ts_cats if c in all_cats] or (all_cats[:3] if len(all_cats) >= 3 else all_cats)
+default_cats = [c for c in st.session_state.saved_ts_cats if c in all_cats]
 
 sel_cats = st.sidebar.multiselect("Categories", all_cats, default=default_cats, key="widget_ts_cat")
 st.session_state.saved_ts_cats = sel_cats
 
 if not sel_cats:
-    st.warning("Select at least one category.")
+    st.info("👈 Select at least one **Category**.")
     st.stop()
 
 # --- Indicators ---
@@ -69,23 +61,21 @@ seen = set()
 unique = [i for i in all_inds if i['indicator_code'] not in seen and not seen.add(i['indicator_code'])]
 
 if not unique:
-    st.warning("No indicators found.")
+    st.warning("No indicators found for selected sources/categories.")
     st.stop()
 
 ind_opts = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in unique}
-ind_units = {i['indicator_code']: i.get('units', '') for i in unique}
+ind_units = {i['indicator_code']: i.get('units', '') or 'Value' for i in unique}
 ind_codes = list(ind_opts.keys())
 
-if st.session_state.saved_ts_inds is None:
-    st.session_state.saved_ts_inds = [ind_codes[0]]
-default_inds = [i for i in st.session_state.saved_ts_inds if i in ind_codes] or [ind_codes[0]]
+default_inds = [i for i in st.session_state.saved_ts_inds if i in ind_codes]
 
 sel_inds = st.sidebar.multiselect("Indicators (max 4)", ind_codes, default=default_inds,
     format_func=lambda x: ind_opts.get(x, x), max_selections=4, key="widget_ts_ind")
 st.session_state.saved_ts_inds = sel_inds
 
 if not sel_inds:
-    st.info("Select at least one indicator.")
+    st.info("👈 Select at least one **Indicator**.")
     st.stop()
 
 st.sidebar.markdown("**Selected:**")
@@ -97,22 +87,23 @@ countries = data.get_countries()
 co_opts = {c['country_iso3']: c['country_name'] for c in countries}
 co_codes = list(co_opts.keys())
 
-if st.session_state.saved_ts_cos is None:
-    st.session_state.saved_ts_cos = [c for c in ["USA", "CHN", "DEU", "JPN", "BRA"] if c in co_opts][:5]
-default_cos = [c for c in st.session_state.saved_ts_cos if c in co_codes] or co_codes[:5]
+default_cos = [c for c in st.session_state.saved_ts_cos if c in co_codes]
 
 sel_cos = st.sidebar.multiselect("Countries", co_codes, default=default_cos,
     format_func=lambda x: co_opts.get(x, x), key="widget_ts_co")
 st.session_state.saved_ts_cos = sel_cos
 
 if not sel_cos:
-    st.warning("Select at least one country.")
+    st.info("👈 Select at least one **Country**.")
     st.stop()
+
+# Mark as initialized after first successful configuration
+st.session_state.initialized_ts = True
 
 # --- Year range ---
 mn, mx = data.get_year_range()
 if st.session_state.saved_ts_yr is None:
-    st.session_state.saved_ts_yr = (1990, mx)
+    st.session_state.saved_ts_yr = (mn, mx)
 default_yr = (max(mn, st.session_state.saved_ts_yr[0]), min(mx, st.session_state.saved_ts_yr[1]))
 
 yr = st.sidebar.slider("Years", mn, mx, default_yr, key="widget_ts_yr")
@@ -137,11 +128,10 @@ for ind in sel_inds:
         all_data.append(df)
 
 if not all_data:
-    st.warning("No data found.")
+    st.warning("No data found for selected filters.")
     st.stop()
 
 combined = pd.concat(all_data, ignore_index=True)
-mode = 'lines+markers' if markers else 'lines'
 colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
 
 def normalize_df(df):
@@ -157,23 +147,63 @@ def normalize_df(df):
         return result
     return df
 
+def is_sparse_data(df):
+    """Detect if data is sparse (non-continuous years)"""
+    if df.empty:
+        return False
+    years = sorted(df['year'].unique())
+    if len(years) < 2:
+        return True
+    # Check if gaps exist between years
+    expected_years = set(range(min(years), max(years) + 1))
+    actual_years = set(years)
+    coverage = len(actual_years) / len(expected_years) if expected_years else 1
+    return coverage < 0.5  # Less than 50% coverage = sparse
+
+def get_chart_mode(df):
+    """Return 'bar' for sparse data, 'line' for continuous"""
+    return 'bar' if is_sparse_data(df) else 'line'
+
 # --- Chart ---
 if len(sel_inds) == 1:
     ind = sel_inds[0]
+    unit = "Index (base=100)" if norm else ind_units.get(ind, 'Value')
     st.markdown(f"### {ind_opts.get(ind, ind)}")
     df = normalize_df(all_data[0].copy())
-    fig = go.Figure()
-    for c in df['country_name'].unique():
-        cdf = df[df['country_name'] == c].sort_values('year')
-        fig.add_trace(go.Scatter(x=cdf['year'], y=cdf['value'], mode=mode, name=c))
-    fig.update_layout(xaxis_title="Year", yaxis_title="Index" if norm else ind_units.get(ind, 'Value'),
-                     hovermode="x unified", height=500)
+    chart_type = get_chart_mode(df)
+    
+    if chart_type == 'bar':
+        fig = px.bar(df, x='year', y='value', color='country_name', barmode='group',
+            labels={'value': unit, 'year': 'Year', 'country_name': 'Country'})
+    else:
+        mode = 'lines+markers' if markers else 'lines'
+        fig = go.Figure()
+        for c in df['country_name'].unique():
+            cdf = df[df['country_name'] == c].sort_values('year')
+            fig.add_trace(go.Scatter(x=cdf['year'], y=cdf['value'], mode=mode, name=c))
+        fig.update_layout(xaxis_title="Year", yaxis_title=unit)
+    
+    fig.update_layout(hovermode="x unified", height=500)
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.markdown("### Multi-Indicator Comparison")
+    mode = 'lines+markers' if markers else 'lines'
+    
     if len(sel_cos) == 1:
         st.markdown(f"**Country:** {co_opts.get(sel_cos[0])}")
-        if dual and len(sel_inds) >= 2:
+        
+        # Check if any indicator has sparse data
+        any_sparse = any(is_sparse_data(d) for d in all_data)
+        
+        if any_sparse:
+            # Use grouped bar chart
+            combined_df = pd.concat(all_data, ignore_index=True)
+            combined_df = normalize_df(combined_df)
+            combined_df['indicator_short'] = combined_df['indicator_code'].map(
+                lambda x: ind_opts.get(x, x).split(' (')[0][:25])
+            fig = px.bar(combined_df, x='year', y='value', color='indicator_short', barmode='group',
+                labels={'value': 'Index' if norm else 'Value', 'year': 'Year'})
+        elif dual and len(sel_inds) >= 2:
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             half = len(sel_inds) // 2 + len(sel_inds) % 2
             for i, ind in enumerate(sel_inds):
@@ -181,37 +211,53 @@ else:
                 if df:
                     df = normalize_df(df[0].copy()).sort_values('year')
                     sec = i >= half
+                    unit = "Index" if norm else ind_units.get(ind, 'Value')
                     fig.add_trace(go.Scatter(x=df['year'], y=df['value'], mode=mode,
-                        name=ind_opts.get(ind, ind).split(' (')[0][:30], line=dict(color=colors[i%4])), secondary_y=sec)
+                        name=f"{ind_opts.get(ind, ind).split(' (')[0][:25]} ({unit})",
+                        line=dict(color=colors[i%4])), secondary_y=sec)
             fig.update_layout(xaxis_title="Year", hovermode="x unified", height=500)
-            fig.update_yaxes(title_text="Left Axis", secondary_y=False)
-            fig.update_yaxes(title_text="Right Axis", secondary_y=True)
+            left_unit = "Index" if norm else ind_units.get(sel_inds[0], 'Value')
+            right_unit = "Index" if norm else ind_units.get(sel_inds[half], 'Value')
+            fig.update_yaxes(title_text=left_unit, secondary_y=False)
+            fig.update_yaxes(title_text=right_unit, secondary_y=True)
         else:
             fig = go.Figure()
             for i, ind in enumerate(sel_inds):
                 df = [d for d in all_data if d['indicator_code'].iloc[0] == ind]
                 if df:
                     df = normalize_df(df[0].copy()).sort_values('year')
+                    unit = "Index" if norm else ind_units.get(ind, 'Value')
                     fig.add_trace(go.Scatter(x=df['year'], y=df['value'], mode=mode,
-                        name=ind_opts.get(ind, ind).split(' (')[0][:30], line=dict(color=colors[i%4])))
+                        name=f"{ind_opts.get(ind, ind).split(' (')[0][:25]} ({unit})",
+                        line=dict(color=colors[i%4])))
             fig.update_layout(xaxis_title="Year", yaxis_title="Index" if norm else "Value",
                              hovermode="x unified", height=500)
+        
         st.plotly_chart(fig, use_container_width=True)
     else:
         ind = sel_inds[0]
+        unit = "Index (base=100)" if norm else ind_units.get(ind, 'Value')
         st.markdown(f"**Indicator:** {ind_opts.get(ind, ind)}")
         df = normalize_df(all_data[0].copy())
-        fig = go.Figure()
-        for c in df['country_name'].unique():
-            cdf = df[df['country_name'] == c].sort_values('year')
-            fig.add_trace(go.Scatter(x=cdf['year'], y=cdf['value'], mode=mode, name=c))
-        fig.update_layout(xaxis_title="Year", yaxis_title="Index" if norm else ind_units.get(ind, 'Value'),
-                         hovermode="x unified", height=500)
+        chart_type = get_chart_mode(df)
+        
+        if chart_type == 'bar':
+            fig = px.bar(df, x='year', y='value', color='country_name', barmode='group',
+                labels={'value': unit, 'year': 'Year', 'country_name': 'Country'})
+        else:
+            fig = go.Figure()
+            for c in df['country_name'].unique():
+                cdf = df[df['country_name'] == c].sort_values('year')
+                fig.add_trace(go.Scatter(x=cdf['year'], y=cdf['value'], mode=mode, name=c))
+            fig.update_layout(xaxis_title="Year", yaxis_title=unit)
+        
+        fig.update_layout(hovermode="x unified", height=500)
         st.plotly_chart(fig, use_container_width=True)
+        
         if len(sel_inds) > 1:
             st.info("💡 Select one country to compare multiple indicators.")
 
 st.markdown("---")
-disp = combined[['year', 'country_name', 'indicator_name', 'value', 'source']].sort_values(['indicator_name', 'country_name', 'year'])
+disp = combined[['year', 'country_name', 'indicator_name', 'value', 'units', 'source']].sort_values(['indicator_name', 'country_name', 'year'])
 st.dataframe(disp, use_container_width=True, hide_index=True)
 st.download_button("📥 CSV", disp.to_csv(index=False), "timeseries.csv", "text/csv")

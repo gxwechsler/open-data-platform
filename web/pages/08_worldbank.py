@@ -13,7 +13,7 @@ st.title("🌍 World Bank Data")
 
 db = get_db_manager()
 
-# --- Initialize logical state (saved_ prefix) ---
+# --- Initialize logical state ---
 if 'saved_wb_ind' not in st.session_state:
     st.session_state.saved_wb_ind = None
 if 'saved_wb_cos' not in st.session_state:
@@ -24,7 +24,7 @@ if 'saved_wb_yr' not in st.session_state:
 @st.cache_data(ttl=300)
 def get_indicators():
     r = db.execute_query("""
-        SELECT DISTINCT indicator_code, indicator_name, category
+        SELECT DISTINCT indicator_code, indicator_name, category, units
         FROM time_series_unified_data WHERE source = 'WB' ORDER BY indicator_name
     """)
     return r if r else []
@@ -67,6 +67,7 @@ if not indicators:
     st.stop()
 
 ind_opts = {i['indicator_code']: i['indicator_name'] for i in indicators}
+ind_units = {i['indicator_code']: i.get('units') or 'Value' for i in indicators}
 co_opts = {c['country_iso3']: c['country_name'] for c in countries}
 ind_codes = list(ind_opts.keys())
 co_codes = list(co_opts.keys())
@@ -114,13 +115,16 @@ if df.empty:
     st.warning("No data found.")
     st.stop()
 
+unit = ind_units.get(ind, 'Value')
 st.markdown(f"### {ind_opts.get(ind, ind)}")
+st.caption(f"**Units:** {unit}")
 
 tab1, tab2, tab3 = st.tabs(["📈 Time Series", "🗺️ Map", "📋 Data"])
 
 with tab1:
-    fig = px.line(df, x='year', y='value', color='country_name', markers=True)
-    fig.update_layout(xaxis_title="Year", yaxis_title="Value", hovermode="x unified", height=450)
+    fig = px.line(df, x='year', y='value', color='country_name', markers=True,
+        labels={'value': unit, 'year': 'Year', 'country_name': 'Country'})
+    fig.update_layout(xaxis_title="Year", yaxis_title=unit, hovermode="x unified", height=450)
     st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
@@ -128,7 +132,9 @@ with tab2:
     if not latest.empty:
         fig = px.choropleth(latest, locations='country_iso3', color='value',
             hover_name='country_name', hover_data=['year'],
-            title=f"{ind_opts.get(ind, ind)} (Latest)", color_continuous_scale="Viridis")
+            title=f"{ind_opts.get(ind, ind)} (Latest Year)",
+            color_continuous_scale="Viridis",
+            labels={'value': unit})
         fig.update_layout(geo=dict(showframe=False, projection_type='natural earth'), height=450)
         st.plotly_chart(fig, use_container_width=True)
 
