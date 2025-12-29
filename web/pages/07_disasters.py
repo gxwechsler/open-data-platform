@@ -68,30 +68,30 @@ selected_country = st.sidebar.selectbox(
     format_func=lambda x: COUNTRY_NAMES.get(x, x) if x != "All" else "All"
 )
 
-# Build query
+# Build query with named parameters for SQLAlchemy
 def get_disaster_data(disaster_type=None, disaster_group=None, country=None, year_start=None, year_end=None):
     query = "SELECT * FROM disasters WHERE 1=1"
-    params = []
+    params = {}
     
     if disaster_type:
-        query += " AND disaster_type = %s"
-        params.append(disaster_type)
+        query += " AND disaster_type = :dtype"
+        params['dtype'] = disaster_type
     if disaster_group:
-        query += " AND disaster_group = %s"
-        params.append(disaster_group)
+        query += " AND disaster_group = :dgroup"
+        params['dgroup'] = disaster_group
     if country:
-        query += " AND country_iso3 = %s"
-        params.append(country)
+        query += " AND country_iso3 = :country"
+        params['country'] = country
     if year_start:
-        query += " AND year >= %s"
-        params.append(year_start)
+        query += " AND year >= :year_start"
+        params['year_start'] = year_start
     if year_end:
-        query += " AND year <= %s"
-        params.append(year_end)
+        query += " AND year <= :year_end"
+        params['year_end'] = year_end
     
     query += " ORDER BY year DESC, deaths DESC NULLS LAST"
     
-    result = db.execute_query(query, tuple(params) if params else None)
+    result = db.execute_query(query, params if params else None)
     if result:
         df = pd.DataFrame(result)
         # Add country names
