@@ -15,7 +15,7 @@ st.markdown("Chart and compare indicators across countries and sources")
 
 data = UnifiedData()
 
-# Initialize session state for all filters
+# Initialize session state
 if 'ts_sources' not in st.session_state:
     st.session_state.ts_sources = None
 if 'ts_categories' not in st.session_state:
@@ -38,14 +38,10 @@ if 'ts_dual_axis' not in st.session_state:
 # Sidebar
 st.sidebar.header("Configuration")
 
-# 1. Source filter (multiselect)
+# 1. Source filter
 sources = data.get_sources()
-
-# Set default sources
 if st.session_state.ts_sources is None:
     st.session_state.ts_sources = sources
-
-# Filter to only valid sources
 valid_sources = [s for s in st.session_state.ts_sources if s in sources]
 if not valid_sources:
     valid_sources = sources
@@ -62,18 +58,15 @@ if not selected_sources:
     st.warning("Please select at least one data source.")
     st.stop()
 
-# 2. Category filter (multiselect)
+# 2. Category filter
 all_categories = []
 for source in selected_sources:
     cats = data.get_categories(source=source)
     all_categories.extend(cats)
 all_categories = sorted(list(set(all_categories)))
 
-# Set default categories
 if st.session_state.ts_categories is None:
     st.session_state.ts_categories = all_categories[:3] if len(all_categories) > 3 else all_categories
-
-# Filter to valid categories
 valid_categories = [c for c in st.session_state.ts_categories if c in all_categories]
 if not valid_categories:
     valid_categories = all_categories[:3] if len(all_categories) > 3 else all_categories
@@ -90,14 +83,13 @@ if not selected_categories:
     st.warning("Please select at least one category.")
     st.stop()
 
-# 3. Get all indicators for selected sources and categories
+# 3. Get all indicators
 all_indicators = []
 for source in selected_sources:
     for category in selected_categories:
         indicators = data.get_indicators(source=source, category=category)
         all_indicators.extend(indicators)
 
-# Remove duplicates by indicator_code
 seen = set()
 unique_indicators = []
 for ind in all_indicators:
@@ -109,25 +101,22 @@ if not unique_indicators:
     st.warning("No indicators found for selected filters.")
     st.stop()
 
-# Build indicator options with units info
+# Build indicator options - FULL names, no truncation
 indicator_options = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in unique_indicators}
 indicator_units = {i['indicator_code']: i.get('units', '') for i in unique_indicators}
 
-# Set default indicators
 if st.session_state.ts_indicators is None:
     st.session_state.ts_indicators = [list(indicator_options.keys())[0]] if indicator_options else []
-
-# Filter to valid indicators
 valid_indicators = [i for i in st.session_state.ts_indicators if i in indicator_options]
 if not valid_indicators and indicator_options:
     valid_indicators = [list(indicator_options.keys())[0]]
 
-# 4. Indicator selection (multiselect - up to 4)
+# 4. Indicator selection - SHOW FULL NAME (no truncation)
 selected_indicators = st.sidebar.multiselect(
     "Select Indicators (max 4)",
     options=list(indicator_options.keys()),
     default=valid_indicators,
-    format_func=lambda x: indicator_options.get(x, x)[:50],
+    format_func=lambda x: indicator_options.get(x, x),  # Full name, no [:50] truncation
     max_selections=4,
     key="ts_indicators_select"
 )
@@ -137,11 +126,16 @@ if not selected_indicators:
     st.info("Please select at least one indicator from the sidebar.")
     st.stop()
 
+# Show selected indicators for reference
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Selected:**")
+for ind in selected_indicators:
+    st.sidebar.caption(f"• {indicator_options.get(ind, ind)}")
+
 # 5. Countries
 countries = data.get_countries()
 country_options = {c['country_iso3']: c['country_name'] for c in countries}
 
-# Set default countries
 if st.session_state.ts_countries is None:
     default_countries = []
     for code in ["USA", "CHN", "DEU", "JPN", "BRA"]:
@@ -149,7 +143,6 @@ if st.session_state.ts_countries is None:
             default_countries.append(code)
     st.session_state.ts_countries = default_countries[:5]
 
-# Filter to valid countries
 valid_countries = [c for c in st.session_state.ts_countries if c in country_options]
 if not valid_countries:
     for code in ["USA", "CHN", "DEU", "JPN", "BRA"]:
@@ -193,7 +186,7 @@ st.session_state.ts_markers = show_markers
 use_dual_axis = st.sidebar.checkbox("Use Dual Y-Axis", value=st.session_state.ts_dual_axis or len(selected_indicators) > 1, key="ts_dual_cb")
 st.session_state.ts_dual_axis = use_dual_axis
 
-# Fetch data for all selected indicators
+# Fetch data
 all_data = []
 for ind_code in selected_indicators:
     df = data.get_data(
@@ -211,19 +204,14 @@ if not all_data:
 
 combined_df = pd.concat(all_data, ignore_index=True)
 
-# Get units for selected indicators
 def get_units_label(ind_code):
-    """Get units label for indicator."""
     if normalize:
         return "Index (Base=100)"
     units = indicator_units.get(ind_code, '')
-    if units:
-        return units
-    return "Value"
+    return units if units else "Value"
 
 # Create chart
 if len(selected_indicators) == 1:
-    # Single indicator - simple line chart
     ind_code = selected_indicators[0]
     ind_name = indicator_options.get(ind_code, ind_code)
     units_label = get_units_label(ind_code)
@@ -235,9 +223,11 @@ if len(selected_indicators) == 1:
     if normalize:
         for country in df['country_iso3'].unique():
             mask = df['country_iso3'] == country
-            first_val = df.loc[mask].sort_values('year')['value'].iloc[0]
-            if first_val and first_val != 0:
-                df.loc[mask, 'value'] = (df.loc[mask, 'value'] / first_val) * 100
+            sorted_df = df.loc[mask].sort_values('year')
+            if len(sorted_df) > 0:
+                first_val = sorted_df['value'].iloc[0]
+                if first_val and first_val != 0:
+                    df.loc[mask, 'value'] = (df.loc[mask, 'value'] / first_val) * 100
     
     fig = go.Figure()
     for country in df['country_name'].unique():
@@ -258,21 +248,16 @@ if len(selected_indicators) == 1:
     st.plotly_chart(fig, use_container_width=True)
 
 else:
-    # Multiple indicators
     st.markdown("### Multi-Indicator Comparison")
     
     if len(selected_countries) == 1:
-        # One country, multiple indicators
         country_name = country_options.get(selected_countries[0], selected_countries[0])
         st.markdown(f"**Country:** {country_name}")
         
         if use_dual_axis and len(selected_indicators) >= 2:
-            # Dual y-axis
             fig = make_subplots(specs=[[{"secondary_y": True}]])
-            
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
             
-            # Get units for left and right axes
             left_indicators = selected_indicators[:len(selected_indicators)//2 + len(selected_indicators)%2]
             right_indicators = selected_indicators[len(selected_indicators)//2 + len(selected_indicators)%2:]
             
@@ -291,27 +276,25 @@ else:
                     df = df.sort_values('year')
                     secondary = ind_code in right_indicators
                     
+                    # Shorter name for legend
+                    short_name = indicator_options.get(ind_code, ind_code).split(' (')[0][:40]
+                    
                     fig.add_trace(
                         go.Scatter(
                             x=df['year'],
                             y=df['value'],
                             mode='lines+markers' if show_markers else 'lines',
-                            name=indicator_options.get(ind_code, ind_code)[:30],
+                            name=short_name,
                             line=dict(color=colors[i % len(colors)])
                         ),
                         secondary_y=secondary
                     )
             
-            fig.update_layout(
-                xaxis_title="Year",
-                hovermode="x unified",
-                height=500
-            )
+            fig.update_layout(xaxis_title="Year", hovermode="x unified", height=500)
             fig.update_yaxes(title_text=left_units, secondary_y=False)
             fig.update_yaxes(title_text=right_units, secondary_y=True)
             
         else:
-            # Single y-axis
             fig = go.Figure()
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
             
@@ -325,11 +308,12 @@ else:
                             df['value'] = (df['value'] / first_val) * 100
                     
                     df = df.sort_values('year')
+                    short_name = indicator_options.get(ind_code, ind_code).split(' (')[0][:40]
                     fig.add_trace(go.Scatter(
                         x=df['year'],
                         y=df['value'],
                         mode='lines+markers' if show_markers else 'lines',
-                        name=indicator_options.get(ind_code, ind_code)[:30],
+                        name=short_name,
                         line=dict(color=colors[i % len(colors)])
                     ))
             
@@ -343,7 +327,6 @@ else:
         st.plotly_chart(fig, use_container_width=True)
     
     else:
-        # Multiple countries - show first indicator for all countries
         ind_code = selected_indicators[0]
         ind_name = indicator_options.get(ind_code, ind_code)
         units_label = get_units_label(ind_code)
