@@ -14,58 +14,76 @@ st.title("📈 Time Series Analysis")
 
 data = UnifiedData()
 
-# Session state
-for key, val in [('ts_sources', None), ('ts_categories', None), ('ts_indicators', None),
-                 ('ts_countries', None), ('ts_yr_s', 1990), ('ts_yr_e', 2024),
-                 ('ts_normalize', False), ('ts_markers', True), ('ts_dual', False)]:
-    if key not in st.session_state:
-        st.session_state[key] = val
+# --- Initialize logical state (saved_ prefix) ---
+if 'saved_ts_sources' not in st.session_state:
+    st.session_state.saved_ts_sources = None
+if 'saved_ts_cats' not in st.session_state:
+    st.session_state.saved_ts_cats = None
+if 'saved_ts_inds' not in st.session_state:
+    st.session_state.saved_ts_inds = None
+if 'saved_ts_cos' not in st.session_state:
+    st.session_state.saved_ts_cos = None
+if 'saved_ts_yr' not in st.session_state:
+    st.session_state.saved_ts_yr = None
+if 'saved_ts_norm' not in st.session_state:
+    st.session_state.saved_ts_norm = False
+if 'saved_ts_markers' not in st.session_state:
+    st.session_state.saved_ts_markers = True
+if 'saved_ts_dual' not in st.session_state:
+    st.session_state.saved_ts_dual = False
 
 st.sidebar.header("Configuration")
 
-# Sources
+# --- Sources ---
 sources = data.get_sources()
-if st.session_state.ts_sources is None:
-    st.session_state.ts_sources = sources
-valid = [s for s in st.session_state.ts_sources if s in sources] or sources
-sel_sources = st.sidebar.multiselect("Sources", sources, default=valid, key="ts_src")
-st.session_state.ts_sources = sel_sources
+if st.session_state.saved_ts_sources is None:
+    st.session_state.saved_ts_sources = sources
+default_src = [s for s in st.session_state.saved_ts_sources if s in sources] or sources
+
+sel_sources = st.sidebar.multiselect("Sources", sources, default=default_src, key="widget_ts_src")
+st.session_state.saved_ts_sources = sel_sources
+
 if not sel_sources:
     st.warning("Select at least one source.")
     st.stop()
 
-# Categories
+# --- Categories ---
 all_cats = sorted(set(c for s in sel_sources for c in data.get_categories(source=s)))
-if st.session_state.ts_categories is None:
-    st.session_state.ts_categories = all_cats[:3]
-valid = [c for c in st.session_state.ts_categories if c in all_cats] or all_cats[:3]
-sel_cats = st.sidebar.multiselect("Categories", all_cats, default=valid, key="ts_cat")
-st.session_state.ts_categories = sel_cats
+if st.session_state.saved_ts_cats is None:
+    st.session_state.saved_ts_cats = all_cats[:3] if len(all_cats) >= 3 else all_cats
+default_cats = [c for c in st.session_state.saved_ts_cats if c in all_cats] or (all_cats[:3] if len(all_cats) >= 3 else all_cats)
+
+sel_cats = st.sidebar.multiselect("Categories", all_cats, default=default_cats, key="widget_ts_cat")
+st.session_state.saved_ts_cats = sel_cats
+
 if not sel_cats:
     st.warning("Select at least one category.")
     st.stop()
 
-# Indicators
+# --- Indicators ---
 all_inds = []
 for s in sel_sources:
     for c in sel_cats:
         all_inds.extend(data.get_indicators(source=s, category=c))
 seen = set()
 unique = [i for i in all_inds if i['indicator_code'] not in seen and not seen.add(i['indicator_code'])]
+
 if not unique:
     st.warning("No indicators found.")
     st.stop()
 
 ind_opts = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in unique}
 ind_units = {i['indicator_code']: i.get('units', '') for i in unique}
+ind_codes = list(ind_opts.keys())
 
-if st.session_state.ts_indicators is None:
-    st.session_state.ts_indicators = [list(ind_opts.keys())[0]]
-valid = [i for i in st.session_state.ts_indicators if i in ind_opts] or [list(ind_opts.keys())[0]]
+if st.session_state.saved_ts_inds is None:
+    st.session_state.saved_ts_inds = [ind_codes[0]]
+default_inds = [i for i in st.session_state.saved_ts_inds if i in ind_codes] or [ind_codes[0]]
 
-sel_inds = st.sidebar.multiselect("Indicators (max 4)", list(ind_opts.keys()), default=valid,
-    format_func=lambda x: ind_opts.get(x, x), max_selections=4, key="ts_ind")
-st.session_state.ts_indicators = sel_inds
+sel_inds = st.sidebar.multiselect("Indicators (max 4)", ind_codes, default=default_inds,
+    format_func=lambda x: ind_opts.get(x, x), max_selections=4, key="widget_ts_ind")
+st.session_state.saved_ts_inds = sel_inds
+
 if not sel_inds:
     st.info("Select at least one indicator.")
     st.stop()
@@ -74,42 +92,50 @@ st.sidebar.markdown("**Selected:**")
 for i in sel_inds:
     st.sidebar.caption(f"• {ind_opts.get(i, i)[:50]}")
 
-# Countries
+# --- Countries ---
 countries = data.get_countries()
 co_opts = {c['country_iso3']: c['country_name'] for c in countries}
-if st.session_state.ts_countries is None:
-    st.session_state.ts_countries = [c for c in ["USA", "CHN", "DEU", "JPN", "BRA"] if c in co_opts][:5]
-valid = [c for c in st.session_state.ts_countries if c in co_opts]
-if not valid:
-    valid = [c for c in ["USA", "CHN", "DEU", "JPN", "BRA"] if c in co_opts][:5]
+co_codes = list(co_opts.keys())
 
-sel_cos = st.sidebar.multiselect("Countries", list(co_opts.keys()), default=valid,
-    format_func=lambda x: co_opts.get(x, x), key="ts_co")
-st.session_state.ts_countries = sel_cos
+if st.session_state.saved_ts_cos is None:
+    st.session_state.saved_ts_cos = [c for c in ["USA", "CHN", "DEU", "JPN", "BRA"] if c in co_opts][:5]
+default_cos = [c for c in st.session_state.saved_ts_cos if c in co_codes] or co_codes[:5]
+
+sel_cos = st.sidebar.multiselect("Countries", co_codes, default=default_cos,
+    format_func=lambda x: co_opts.get(x, x), key="widget_ts_co")
+st.session_state.saved_ts_cos = sel_cos
+
 if not sel_cos:
     st.warning("Select at least one country.")
     st.stop()
 
-# Year range
+# --- Year range ---
 mn, mx = data.get_year_range()
-yr = st.sidebar.slider("Years", mn, mx, (max(mn, st.session_state.ts_yr_s), min(mx, st.session_state.ts_yr_e)), key="ts_yr")
-st.session_state.ts_yr_s, st.session_state.ts_yr_e = yr
+if st.session_state.saved_ts_yr is None:
+    st.session_state.saved_ts_yr = (1990, mx)
+default_yr = (max(mn, st.session_state.saved_ts_yr[0]), min(mx, st.session_state.saved_ts_yr[1]))
 
-# Options
+yr = st.sidebar.slider("Years", mn, mx, default_yr, key="widget_ts_yr")
+st.session_state.saved_ts_yr = yr
+
+# --- Options ---
 st.sidebar.markdown("---")
-norm = st.sidebar.checkbox("Normalize (Index=100)", st.session_state.ts_normalize, key="ts_norm")
-st.session_state.ts_normalize = norm
-markers = st.sidebar.checkbox("Show Markers", st.session_state.ts_markers, key="ts_mark")
-st.session_state.ts_markers = markers
-dual = st.sidebar.checkbox("Dual Y-Axis", st.session_state.ts_dual, key="ts_dual")
-st.session_state.ts_dual = dual
+norm = st.sidebar.checkbox("Normalize (Index=100)", value=st.session_state.saved_ts_norm, key="widget_ts_norm")
+st.session_state.saved_ts_norm = norm
 
-# Fetch data
+markers = st.sidebar.checkbox("Show Markers", value=st.session_state.saved_ts_markers, key="widget_ts_mark")
+st.session_state.saved_ts_markers = markers
+
+dual = st.sidebar.checkbox("Dual Y-Axis", value=st.session_state.saved_ts_dual, key="widget_ts_dual")
+st.session_state.saved_ts_dual = dual
+
+# --- Fetch data ---
 all_data = []
 for ind in sel_inds:
     df = data.get_data(indicator_code=ind, countries=sel_cos, year_start=yr[0], year_end=yr[1])
     if not df.empty:
         all_data.append(df)
+
 if not all_data:
     st.warning("No data found.")
     st.stop()
@@ -120,13 +146,18 @@ colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
 
 def normalize_df(df):
     if norm:
-        for c in df['country_iso3'].unique():
-            m = df['country_iso3'] == c
-            first = df.loc[m].sort_values('year')['value'].iloc[0]
-            if first and first != 0:
-                df.loc[m, 'value'] = df.loc[m, 'value'] / first * 100
+        result = df.copy()
+        for c in result['country_iso3'].unique():
+            m = result['country_iso3'] == c
+            sorted_df = result.loc[m].sort_values('year')
+            if len(sorted_df) > 0:
+                first = sorted_df['value'].iloc[0]
+                if first and first != 0:
+                    result.loc[m, 'value'] = result.loc[m, 'value'] / first * 100
+        return result
     return df
 
+# --- Chart ---
 if len(sel_inds) == 1:
     ind = sel_inds[0]
     st.markdown(f"### {ind_opts.get(ind, ind)}")

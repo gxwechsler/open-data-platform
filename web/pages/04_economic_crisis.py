@@ -14,11 +14,15 @@ st.markdown("Crisis indicators from Laeven-Valencia (IMF) and Reinhart-Rogoff da
 
 db = get_db_manager()
 
-# Session state
-for key, val in [('ec_source', 'All'), ('ec_ind', None), ('ec_countries', None),
-                 ('ec_yr_s', 1970), ('ec_yr_e', 2020)]:
-    if key not in st.session_state:
-        st.session_state[key] = val
+# --- Initialize logical state (saved_ prefix) ---
+if 'saved_ec_src' not in st.session_state:
+    st.session_state.saved_ec_src = "All"
+if 'saved_ec_ind' not in st.session_state:
+    st.session_state.saved_ec_ind = None
+if 'saved_ec_cos' not in st.session_state:
+    st.session_state.saved_ec_cos = None
+if 'saved_ec_yr' not in st.session_state:
+    st.session_state.saved_ec_yr = None
 
 @st.cache_data(ttl=300)
 def get_indicators():
@@ -78,45 +82,67 @@ def get_data(indicator=None, countries=None, yr_s=None, yr_e=None, source=None):
     q += " ORDER BY year"
     return pd.DataFrame(db.execute_query(q, p or None) or [])
 
-# Sidebar
+# --- Sidebar Filters ---
 st.sidebar.header("Filters")
 
-opts = ["All", "LV", "RR"]
-idx = opts.index(st.session_state.ec_source) if st.session_state.ec_source in opts else 0
-source = st.sidebar.selectbox("Source", opts, index=idx,
-    format_func=lambda x: {"All": "All", "LV": "Laeven-Valencia", "RR": "Reinhart-Rogoff"}.get(x, x), key="ec_src")
-st.session_state.ec_source = source
+# Source
+src_options = ["All", "LV", "RR"]
+try:
+    src_idx = src_options.index(st.session_state.saved_ec_src)
+except ValueError:
+    src_idx = 0
 
+source = st.sidebar.selectbox("Source", src_options, index=src_idx,
+    format_func=lambda x: {"All": "All", "LV": "Laeven-Valencia", "RR": "Reinhart-Rogoff"}.get(x, x),
+    key="widget_ec_src")
+st.session_state.saved_ec_src = source
+
+# Indicator
 indicators = get_indicators()
 if source != 'All':
     indicators = [i for i in indicators if i['source'] == source]
 ind_opts = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in indicators}
 
-if ind_opts:
-    codes = list(ind_opts.keys())
-    if st.session_state.ec_ind not in codes:
-        st.session_state.ec_ind = codes[0]
-    idx = codes.index(st.session_state.ec_ind)
-    ind = st.sidebar.selectbox("Indicator", codes, index=idx, format_func=lambda x: ind_opts.get(x, x), key="ec_ind")
-    st.session_state.ec_ind = ind
-else:
+if not ind_opts:
     st.warning("No crisis indicators found.")
     st.stop()
 
+codes = list(ind_opts.keys())
+if st.session_state.saved_ec_ind is None or st.session_state.saved_ec_ind not in codes:
+    st.session_state.saved_ec_ind = codes[0]
+
+try:
+    ind_idx = codes.index(st.session_state.saved_ec_ind)
+except ValueError:
+    ind_idx = 0
+
+ind = st.sidebar.selectbox("Indicator", codes, index=ind_idx,
+    format_func=lambda x: ind_opts.get(x, x), key="widget_ec_ind")
+st.session_state.saved_ec_ind = ind
+
+# Countries
 countries = get_countries()
 co_opts = {c['country_iso3']: c['country_name'] for c in countries}
-if st.session_state.ec_countries is None:
-    st.session_state.ec_countries = list(co_opts.keys())[:10]
-valid = [c for c in st.session_state.ec_countries if c in co_opts] or list(co_opts.keys())[:10]
-sel_cos = st.sidebar.multiselect("Countries", list(co_opts.keys()), default=valid,
-    format_func=lambda x: co_opts.get(x, x), key="ec_co")
-st.session_state.ec_countries = sel_cos
+co_codes = list(co_opts.keys())
 
+if st.session_state.saved_ec_cos is None:
+    st.session_state.saved_ec_cos = co_codes[:10]
+default_cos = [c for c in st.session_state.saved_ec_cos if c in co_codes] or co_codes[:10]
+
+sel_cos = st.sidebar.multiselect("Countries", co_codes, default=default_cos,
+    format_func=lambda x: co_opts.get(x, x), key="widget_ec_co")
+st.session_state.saved_ec_cos = sel_cos
+
+# Years
 mn, mx = get_years()
-yr = st.sidebar.slider("Years", mn, mx, (max(mn, st.session_state.ec_yr_s), min(mx, st.session_state.ec_yr_e)), key="ec_yr")
-st.session_state.ec_yr_s, st.session_state.ec_yr_e = yr
+if st.session_state.saved_ec_yr is None:
+    st.session_state.saved_ec_yr = (1970, mx)
+default_yr = (max(mn, st.session_state.saved_ec_yr[0]), min(mx, st.session_state.saved_ec_yr[1]))
 
-# Stats
+yr = st.sidebar.slider("Years", mn, mx, default_yr, key="widget_ec_yr")
+st.session_state.saved_ec_yr = yr
+
+# --- Stats ---
 stats = get_stats()
 if stats:
     st.markdown("### Data Coverage")
@@ -142,7 +168,6 @@ st.markdown(f"### {ind_opts.get(ind, ind)}")
 tab1, tab2, tab3 = st.tabs(["📈 Timeline", "🗺️ Heatmap", "📋 Data"])
 
 with tab1:
-    # For binary indicators (0/1), show as scatter
     if df['value'].isin([0, 1]).all():
         crisis_df = df[df['value'] == 1]
         if not crisis_df.empty:
@@ -155,7 +180,6 @@ with tab1:
         else:
             st.success("No crisis events in selected range.")
     else:
-        # Continuous indicator - line chart
         fig = px.line(df, x='year', y='value', color='country_name', markers=True)
         fig.update_layout(xaxis_title="Year", yaxis_title="Value", hovermode="x unified", height=450)
         st.plotly_chart(fig, use_container_width=True)

@@ -13,10 +13,13 @@ st.title("🌍 World Bank Data")
 
 db = get_db_manager()
 
-# Session state
-for key, val in [('wb_ind', None), ('wb_countries', None), ('wb_yr_s', 1990), ('wb_yr_e', 2023)]:
-    if key not in st.session_state:
-        st.session_state[key] = val
+# --- Initialize logical state (saved_ prefix) ---
+if 'saved_wb_ind' not in st.session_state:
+    st.session_state.saved_wb_ind = None
+if 'saved_wb_cos' not in st.session_state:
+    st.session_state.saved_wb_cos = None
+if 'saved_wb_yr' not in st.session_state:
+    st.session_state.saved_wb_yr = None
 
 @st.cache_data(ttl=300)
 def get_indicators():
@@ -65,27 +68,41 @@ if not indicators:
 
 ind_opts = {i['indicator_code']: i['indicator_name'] for i in indicators}
 co_opts = {c['country_iso3']: c['country_name'] for c in countries}
+ind_codes = list(ind_opts.keys())
+co_codes = list(co_opts.keys())
 
 st.sidebar.header("Filters")
 
-codes = list(ind_opts.keys())
-if st.session_state.wb_ind not in codes:
-    st.session_state.wb_ind = codes[0]
-idx = codes.index(st.session_state.wb_ind)
-ind = st.sidebar.selectbox("Indicator", codes, index=idx, format_func=lambda x: ind_opts.get(x, x), key="wb_ind")
-st.session_state.wb_ind = ind
+# --- Indicator ---
+if st.session_state.saved_wb_ind is None or st.session_state.saved_wb_ind not in ind_codes:
+    st.session_state.saved_wb_ind = ind_codes[0]
 
-if st.session_state.wb_countries is None:
-    st.session_state.wb_countries = list(co_opts.keys())[:5]
-valid = [c for c in st.session_state.wb_countries if c in co_opts] or list(co_opts.keys())[:5]
-sel_cos = st.sidebar.multiselect("Countries", list(co_opts.keys()), default=valid,
-    format_func=lambda x: co_opts.get(x, x), key="wb_co")
-st.session_state.wb_countries = sel_cos
+try:
+    ind_idx = ind_codes.index(st.session_state.saved_wb_ind)
+except ValueError:
+    ind_idx = 0
 
+ind = st.sidebar.selectbox("Indicator", ind_codes, index=ind_idx,
+    format_func=lambda x: ind_opts.get(x, x), key="widget_wb_ind")
+st.session_state.saved_wb_ind = ind
+
+# --- Countries ---
+if st.session_state.saved_wb_cos is None:
+    st.session_state.saved_wb_cos = [c for c in ["USA", "CHN", "DEU", "JPN", "BRA"] if c in co_opts][:5]
+default_cos = [c for c in st.session_state.saved_wb_cos if c in co_codes] or co_codes[:5]
+
+sel_cos = st.sidebar.multiselect("Countries", co_codes, default=default_cos,
+    format_func=lambda x: co_opts.get(x, x), key="widget_wb_co")
+st.session_state.saved_wb_cos = sel_cos
+
+# --- Years ---
 mn, mx = get_years()
-yr = st.sidebar.slider("Years", mn, mx,
-    (max(mn, st.session_state.wb_yr_s), min(mx, st.session_state.wb_yr_e)), key="wb_yr")
-st.session_state.wb_yr_s, st.session_state.wb_yr_e = yr
+if st.session_state.saved_wb_yr is None:
+    st.session_state.saved_wb_yr = (1990, mx)
+default_yr = (max(mn, st.session_state.saved_wb_yr[0]), min(mx, st.session_state.saved_wb_yr[1]))
+
+yr = st.sidebar.slider("Years", mn, mx, default_yr, key="widget_wb_yr")
+st.session_state.saved_wb_yr = yr
 
 if not sel_cos:
     st.warning("Select at least one country.")
