@@ -66,11 +66,12 @@ with tab1:
             st.session_state.saved_cev_yr = yr
         
         with col3:
-            color_options = ["deaths", "total_affected", "total_damage"]
+            # CORRECT COLUMN: damage_usd (not total_damage)
+            color_options = ["deaths", "total_affected", "damage_usd"]
             color_labels = {
                 "deaths": "Deaths (persons)",
                 "total_affected": "Affected (persons)", 
-                "total_damage": "Damage (USD)"
+                "damage_usd": "Damage (USD)"
             }
             try:
                 color_idx = color_options.index(st.session_state.saved_cev_color)
@@ -86,7 +87,7 @@ with tab1:
             df_map = df_map[df_map['disaster_type'] == sel_type]
         df_map = df_map[(df_map['year'] >= yr[0]) & (df_map['year'] <= yr[1])]
         
-        # Filter out rows with missing coordinates or missing color/size values
+        # Filter out rows with missing coordinates
         df_map = df_map.dropna(subset=['latitude', 'longitude'])
         
         # Handle NaN in the color column - CRITICAL FIX
@@ -104,17 +105,18 @@ with tab1:
             
             st.markdown(f"**Disasters ({yr[0]}-{yr[1]})** | Color/Size: {unit_label}")
             
+            # CORRECT COLUMN: country_iso3 (not country)
             fig = px.scatter_geo(df_map, 
                 lat='latitude', 
                 lon='longitude', 
                 color=color,
                 size=color,
                 hover_name='event_name', 
-                hover_data=['country', 'year', 'disaster_type', 'deaths', 'total_affected', 'total_damage'],
+                hover_data=['country_iso3', 'year', 'disaster_type', 'deaths', 'total_affected', 'damage_usd'],
                 color_continuous_scale="Reds", 
                 size_max=40, 
                 title=f"Disasters by {unit_label}",
-                labels={color: unit_label})
+                labels={color: unit_label, 'country_iso3': 'Country'})
             
             fig.update_layout(
                 geo=dict(showframe=False, showcoastlines=True, projection_type='natural earth'),

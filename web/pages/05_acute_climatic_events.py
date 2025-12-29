@@ -56,8 +56,8 @@ except ValueError:
 sel_group = st.sidebar.selectbox("Group", groups, index=group_idx, key="widget_ace_group")
 st.session_state.saved_ace_group = sel_group
 
-# Country
-countries_list = ["All"] + sorted(df['country'].dropna().unique().tolist())
+# Country - CORRECT COLUMN: country_iso3
+countries_list = ["All"] + sorted(df['country_iso3'].dropna().unique().tolist())
 try:
     country_idx = countries_list.index(st.session_state.saved_ace_country)
 except ValueError:
@@ -81,21 +81,21 @@ if sel_type != "All":
 if sel_group != "All":
     filtered = filtered[filtered['disaster_group'] == sel_group]
 if sel_country != "All":
-    filtered = filtered[filtered['country'] == sel_country]
+    filtered = filtered[filtered['country_iso3'] == sel_country]
 filtered = filtered[(filtered['year'] >= yr[0]) & (filtered['year'] <= yr[1])]
 
 if filtered.empty:
     st.warning("No events match filters.")
     st.stop()
 
-# --- Metrics with units ---
+# --- Metrics with units (CORRECT COLUMN: damage_usd) ---
 st.markdown("### Summary Statistics")
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Events", f"{len(filtered):,}", help="Number of disaster events")
 col2.metric("Deaths", f"{filtered['deaths'].sum():,.0f}" if filtered['deaths'].sum() > 0 else "N/A", help="Total deaths (persons)")
 col3.metric("Affected", f"{filtered['total_affected'].sum():,.0f}" if filtered['total_affected'].sum() > 0 else "N/A", help="Total affected (persons)")
-damage = filtered['total_damage'].sum()
-col4.metric("Damage", f"${damage/1e9:.1f}B" if damage > 0 else "N/A", help="Total damage (USD)")
+damage = filtered['damage_usd'].sum()
+col4.metric("Damage", f"${damage/1e9:.1f}B" if pd.notna(damage) and damage > 0 else "N/A", help="Total damage (USD)")
 
 tab1, tab2, tab3 = st.tabs(["📊 Charts", "📈 Trends", "📋 Data"])
 
@@ -117,7 +117,7 @@ with tab1:
     
     st.markdown("### Deadliest Events")
     st.caption("**Units:** Deaths in persons")
-    top = filtered.nlargest(10, 'deaths')[['year', 'country', 'disaster_type', 'event_name', 'deaths']]
+    top = filtered.nlargest(10, 'deaths')[['year', 'country_iso3', 'disaster_type', 'event_name', 'deaths']]
     top['deaths'] = top['deaths'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
     st.dataframe(top, use_container_width=True, hide_index=True)
 
@@ -126,7 +126,7 @@ with tab2:
         'event_name': 'count',
         'deaths': 'sum',
         'total_affected': 'sum',
-        'total_damage': 'sum'
+        'damage_usd': 'sum'
     }).reset_index()
     yearly.columns = ['Year', 'Events', 'Deaths', 'Affected', 'Damage']
     
@@ -157,12 +157,13 @@ with tab3:
     st.markdown("### Event Data")
     st.caption("**Column Units:** Deaths (persons) | Affected (persons) | Damage (USD)")
     
-    disp = filtered[['year', 'country', 'disaster_type', 'disaster_group', 'event_name', 
-                     'deaths', 'total_affected', 'total_damage', 'latitude', 'longitude']].copy()
+    disp = filtered[['year', 'country_iso3', 'disaster_type', 'disaster_group', 'event_name', 
+                     'deaths', 'total_affected', 'damage_usd', 'latitude', 'longitude']].copy()
     disp = disp.rename(columns={
+        'country_iso3': 'Country',
         'deaths': 'Deaths (persons)',
         'total_affected': 'Affected (persons)',
-        'total_damage': 'Damage (USD)'
+        'damage_usd': 'Damage (USD)'
     })
     st.dataframe(disp, use_container_width=True, hide_index=True)
     st.download_button("📥 CSV", filtered.to_csv(index=False), "acute_climatic_events.csv", "text/csv")

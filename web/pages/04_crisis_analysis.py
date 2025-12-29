@@ -152,30 +152,41 @@ pivot['crisis_label'] = pivot['crisis_count'].map({
 })
 
 # Filter to multi-crisis events
-double_crises = pivot[pivot['crisis_count'] == 2]
-triple_crises = pivot[pivot['crisis_count'] == 3]
+double_crises = pivot[pivot['crisis_count'] == 2].copy()
+triple_crises = pivot[pivot['crisis_count'] == 3].copy()
 
 tab1, tab2, tab3, tab4 = st.tabs(["📈 Timeline", "🔴 Double Crises", "⚫ Triple Crises", "📋 Data"])
 
 with tab1:
-    # Stacked timeline of crisis types
-    timeline_df = crisis_events.groupby(['year', 'crisis_type']).size().reset_index(name='count')
+    # Aggregate crisis counts by year and type
+    timeline_df = crisis_events.groupby(['year', 'crisis_type'])['country_iso3'].nunique().reset_index(name='count')
     
-    fig = px.bar(timeline_df, x='year', y='count', color='crisis_type',
-        title="Crisis Events Over Time by Type",
-        labels={'count': 'Number of Countries', 'year': 'Year', 'crisis_type': 'Crisis Type'},
-        color_discrete_map={'Banking': '#e74c3c', 'Currency': '#f39c12', 'Sovereign': '#9b59b6'})
-    fig.update_layout(hovermode="x unified", height=400, barmode='stack',
-        yaxis_title="Number of Countries in Crisis")
-    st.plotly_chart(fig, use_container_width=True)
+    # Convert year to string to treat as categorical (prevents decimal years)
+    timeline_df['year'] = timeline_df['year'].astype(int)
+    
+    if not timeline_df.empty:
+        fig = px.bar(timeline_df, x='year', y='count', color='crisis_type',
+            title="Crisis Events Over Time by Type",
+            labels={'count': 'Number of Countries', 'year': 'Year', 'crisis_type': 'Crisis Type'},
+            color_discrete_map={'Banking': '#e74c3c', 'Currency': '#f39c12', 'Sovereign': '#9b59b6'},
+            barmode='stack')
+        
+        # Force integer ticks on x-axis
+        fig.update_xaxes(dtick=5, tickformat='d')
+        fig.update_yaxes(dtick=1)
+        fig.update_layout(hovermode="x unified", height=400, yaxis_title="Number of Countries in Crisis")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No timeline data to display.")
     
     # Country distribution
     country_counts = crisis_events.groupby('country_name')['crisis_type'].count().sort_values(ascending=True).tail(20)
-    fig2 = px.bar(x=country_counts.values, y=country_counts.index, orientation='h',
-        title="Top 20 Countries by Crisis Frequency",
-        labels={'x': 'Number of Crisis Events', 'y': 'Country'})
-    fig2.update_layout(height=500)
-    st.plotly_chart(fig2, use_container_width=True)
+    if not country_counts.empty:
+        fig2 = px.bar(x=country_counts.values, y=country_counts.index, orientation='h',
+            title="Top 20 Countries by Crisis Frequency",
+            labels={'x': 'Number of Crisis Events', 'y': 'Country'})
+        fig2.update_layout(height=500)
+        st.plotly_chart(fig2, use_container_width=True)
 
 with tab2:
     st.markdown("#### Double Crises (2 concurrent types)")
@@ -183,7 +194,6 @@ with tab2:
     
     if len(double_crises) > 0:
         # Identify which pairs
-        double_crises = double_crises.copy()
         double_crises['pair'] = double_crises.apply(
             lambda r: '+'.join(sorted([t for t in ['Banking', 'Currency', 'Sovereign'] if r[t] == 1])), axis=1)
         
@@ -199,6 +209,7 @@ with tab2:
                 title="Double Crisis Events",
                 hover_data=['Banking', 'Currency', 'Sovereign'])
             fig.update_traces(marker=dict(size=12))
+            fig.update_xaxes(dtick=5, tickformat='d')
             fig.update_layout(height=max(300, len(double_crises['country_name'].unique()) * 20))
             st.plotly_chart(fig, use_container_width=True)
         
@@ -218,6 +229,7 @@ with tab3:
             title="Triple Crisis Events (Most Severe)",
             hover_data=['Banking', 'Currency', 'Sovereign'])
         fig.update_traces(marker=dict(size=15, color='black', symbol='x'))
+        fig.update_xaxes(dtick=5, tickformat='d')
         fig.update_layout(height=max(300, len(triple_crises['country_name'].unique()) * 25))
         st.plotly_chart(fig, use_container_width=True)
         
