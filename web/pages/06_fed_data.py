@@ -1,9 +1,8 @@
-"""Fed Data page - Federal Reserve economic indicators."""
+"""Federal Reserve Data - FRED economic indicators."""
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import date
 import sys
 from pathlib import Path
 
@@ -15,278 +14,158 @@ st.title("🏛️ Federal Reserve Economic Data")
 
 db = get_db_manager()
 
-# Initialize session state
-if 'fed_view_mode' not in st.session_state:
-    st.session_state.fed_view_mode = "Dashboard"
-if 'fed_start_year' not in st.session_state:
-    st.session_state.fed_start_year = 1990
-if 'fed_end_year' not in st.session_state:
-    st.session_state.fed_end_year = 2025
-if 'fed_indicator' not in st.session_state:
-    st.session_state.fed_indicator = None
-if 'fed_indicator1' not in st.session_state:
-    st.session_state.fed_indicator1 = None
-if 'fed_indicator2' not in st.session_state:
-    st.session_state.fed_indicator2 = None
-if 'fed_normalize' not in st.session_state:
-    st.session_state.fed_normalize = True
-
-# Helper functions
-@st.cache_data(ttl=300)
-def get_fed_indicators():
-    """Get available FRED indicators from unified_indicators."""
-    result = db.execute_query("""
-        SELECT DISTINCT indicator_code, indicator_name, units
-        FROM unified_indicators 
-        WHERE source = 'FRED'
-        ORDER BY indicator_name
-    """)
-    return result if result else []
+# Session state
+for key, val in [('fed_mode', 'Dashboard'), ('fed_yr_s', 1990), ('fed_yr_e', 2024),
+                 ('fed_ind', None), ('fed_ind1', None), ('fed_ind2', None), ('fed_norm', False)]:
+    if key not in st.session_state:
+        st.session_state[key] = val
 
 @st.cache_data(ttl=300)
-def get_fed_year_range():
-    result = db.execute_query("""
-        SELECT MIN(year) as min_year, MAX(year) as max_year 
-        FROM unified_indicators 
-        WHERE source = 'FRED'
+def get_indicators():
+    r = db.execute_query("""
+        SELECT DISTINCT indicator_code, indicator_name, units, category
+        FROM time_series_unified_data WHERE source = 'FRED' ORDER BY indicator_name
     """)
-    if result and result[0]['min_year']:
-        return int(result[0]['min_year']), int(result[0]['max_year'])
-    return 1950, 2025
+    return r if r else []
 
-def get_fed_data(indicator_code, year_start=None, year_end=None):
-    query = """
-        SELECT year, value, indicator_name, units
-        FROM unified_indicators 
-        WHERE source = 'FRED' AND indicator_code = :ind_code
-    """
-    params = {'ind_code': indicator_code}
-    if year_start:
-        query += " AND year >= :year_start"
-        params['year_start'] = year_start
-    if year_end:
-        query += " AND year <= :year_end"
-        params['year_end'] = year_end
-    query += " ORDER BY year"
-    
-    result = db.execute_query(query, params)
-    return pd.DataFrame(result) if result else pd.DataFrame()
+@st.cache_data(ttl=300)
+def get_years():
+    r = db.execute_query("SELECT MIN(year) as mn, MAX(year) as mx FROM time_series_unified_data WHERE source = 'FRED'")
+    return (int(r[0]['mn']), int(r[0]['mx'])) if r and r[0]['mn'] else (1950, 2025)
 
-# Get available indicators
-indicators = get_fed_indicators()
+def get_data(indicator=None, yr_s=None, yr_e=None):
+    q = "SELECT * FROM time_series_unified_data WHERE source = 'FRED'"
+    p = {}
+    if indicator:
+        q += " AND indicator_code = :ind"
+        p['ind'] = indicator
+    if yr_s:
+        q += " AND year >= :ys"
+        p['ys'] = yr_s
+    if yr_e:
+        q += " AND year <= :ye"
+        p['ye'] = yr_e
+    q += " ORDER BY year"
+    return pd.DataFrame(db.execute_query(q, p or None) or [])
+
+indicators = get_indicators()
 if not indicators:
-    st.warning("No FRED data found in the database.")
-    st.info("💡 FRED data may be in the Time Series page. Try filtering by source 'FRED' there.")
+    st.warning("No FRED data found.")
     st.stop()
 
-indicator_options = {i['indicator_code']: f"{i['indicator_code']} - {i['indicator_name']}" for i in indicators}
-indicator_units = {i['indicator_code']: i.get('units', '') for i in indicators}
+ind_opts = {i['indicator_code']: i['indicator_name'] for i in indicators}
+ind_units = {i['indicator_code']: i.get('units', '') for i in indicators}
+mn_yr, mx_yr = get_years()
 
-# Sidebar
-st.sidebar.header("Options")
+st.sidebar.header("Configuration")
 
-view_modes = ["Dashboard", "Single Indicator", "Compare"]
-view_mode = st.sidebar.radio(
-    "View Mode", 
-    view_modes,
-    index=view_modes.index(st.session_state.fed_view_mode) if st.session_state.fed_view_mode in view_modes else 0,
-    key="fed_view_mode_radio"
-)
-st.session_state.fed_view_mode = view_mode
+modes = ['Dashboard', 'Single Indicator', 'Compare Two']
+idx = modes.index(st.session_state.fed_mode) if st.session_state.fed_mode in modes else 0
+mode = st.sidebar.radio("Mode", modes, index=idx, key="fed_mode_sel")
+st.session_state.fed_mode = mode
 
-min_year, max_year = get_fed_year_range()
-year_range = st.sidebar.slider(
-    "Year Range",
-    min_year, max_year,
-    (max(min_year, st.session_state.fed_start_year), min(max_year, st.session_state.fed_end_year)),
-    key="fed_year_slider"
-)
-st.session_state.fed_start_year = year_range[0]
-st.session_state.fed_end_year = year_range[1]
+yr = st.sidebar.slider("Years", mn_yr, mx_yr,
+    (max(mn_yr, st.session_state.fed_yr_s), min(mx_yr, st.session_state.fed_yr_e)), key="fed_yr")
+st.session_state.fed_yr_s, st.session_state.fed_yr_e = yr
 
-if view_mode == "Dashboard":
-    st.markdown("### Economic Dashboard (Annual Data)")
+if mode == 'Dashboard':
+    st.markdown("### Key Indicators")
+    key_inds = ['GDPC1', 'UNRATE', 'CPIAUCSL', 'FEDFUNDS', 'DGS10', 'M2SL']
+    available = [k for k in key_inds if k in ind_opts]
     
-    # Group indicators
-    indicator_groups = {
-        "Output & Growth": ['FRED_GDP', 'FRED_GDPC1'],
-        "Labor Market": ['FRED_UNRATE'],
-        "Inflation": ['FRED_CPIAUCSL', 'FRED_PCEPI'],
-        "Interest Rates": ['FRED_FEDFUNDS', 'FRED_DGS10', 'FRED_DGS2'],
-        "Money Supply": ['FRED_M2SL'],
-        "Housing": ['FRED_HOUST', 'FRED_CSUSHPINSA'],
-        "Other": ['FRED_INDPRO', 'FRED_UMCSENT', 'FRED_BOPGSTB', 'FRED_GFDEBTN']
-    }
-    
-    available_codes = set(indicator_options.keys())
-    
-    for group_name, codes in indicator_groups.items():
-        group_indicators = [c for c in codes if c in available_codes]
-        if not group_indicators:
-            continue
-            
-        st.markdown(f"#### {group_name}")
-        cols = st.columns(min(len(group_indicators), 4))
-        
-        for idx, ind_code in enumerate(group_indicators):
-            with cols[idx % 4]:
-                df = get_fed_data(ind_code, year_range[0], year_range[1])
-                if not df.empty:
-                    ind_name = indicator_options.get(ind_code, ind_code).split(' - ')[-1][:20]
-                    latest = df['value'].iloc[-1]
-                    latest_year = df['year'].iloc[-1]
-                    
-                    # Calculate change
-                    if len(df) > 1:
-                        prev = df['value'].iloc[-2]
-                        if prev and prev != 0:
-                            pct_change = ((latest - prev) / abs(prev)) * 100
-                        else:
-                            pct_change = 0
-                    else:
-                        pct_change = 0
-                    
-                    # Format value
-                    if abs(latest) >= 1e9:
-                        val_str = f"${latest/1e9:.1f}B"
-                    elif abs(latest) >= 1e6:
-                        val_str = f"{latest/1e6:.1f}M"
-                    elif abs(latest) >= 1000:
-                        val_str = f"{latest:,.0f}"
-                    else:
-                        val_str = f"{latest:.2f}"
-                    
-                    st.metric(
-                        label=f"{ind_name} ({latest_year})",
-                        value=val_str,
-                        delta=f"{pct_change:+.1f}%"
-                    )
-                    
-                    # Mini chart
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=df['year'], 
-                        y=df['value'], 
-                        mode='lines', 
-                        fill='tozeroy',
-                        line=dict(color='#1f77b4')
-                    ))
-                    fig.update_layout(
-                        height=80,
-                        margin=dict(l=0, r=0, t=0, b=0),
-                        showlegend=False,
-                        xaxis=dict(visible=False),
-                        yaxis=dict(visible=False)
-                    )
+    if available:
+        cols = st.columns(min(3, len(available)))
+        for i, ind in enumerate(available[:6]):
+            df = get_data(ind, yr[0], yr[1])
+            if not df.empty:
+                with cols[i % 3]:
+                    st.markdown(f"**{ind_opts.get(ind, ind)[:25]}**")
+                    latest = df.iloc[-1]['value']
+                    prev = df.iloc[-2]['value'] if len(df) > 1 else latest
+                    delta = ((latest - prev) / prev * 100) if prev and prev != 0 else 0
+                    st.metric("Latest", f"{latest:,.2f}", f"{delta:+.1f}%")
+                    fig = px.line(df, x='year', y='value', height=120)
+                    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), showlegend=False, xaxis_title="", yaxis_title="")
                     st.plotly_chart(fig, use_container_width=True)
-        
-        st.markdown("---")
+    
+    st.markdown("---")
+    st.markdown("### All FRED Indicators")
+    st.dataframe(pd.DataFrame(indicators)[['indicator_code', 'indicator_name', 'units', 'category']],
+                use_container_width=True, hide_index=True)
 
-elif view_mode == "Single Indicator":
-    # Set default indicator
-    if st.session_state.fed_indicator is None or st.session_state.fed_indicator not in indicator_options:
-        st.session_state.fed_indicator = list(indicator_options.keys())[0]
+elif mode == 'Single Indicator':
+    codes = list(ind_opts.keys())
+    if st.session_state.fed_ind not in codes:
+        st.session_state.fed_ind = codes[0]
+    idx = codes.index(st.session_state.fed_ind)
+    ind = st.sidebar.selectbox("Indicator", codes, index=idx, format_func=lambda x: ind_opts.get(x, x), key="fed_ind")
+    st.session_state.fed_ind = ind
     
-    selected = st.selectbox(
-        "Select Indicator",
-        list(indicator_options.keys()),
-        index=list(indicator_options.keys()).index(st.session_state.fed_indicator) if st.session_state.fed_indicator in indicator_options else 0,
-        format_func=lambda x: indicator_options.get(x, x),
-        key="fed_single_select"
-    )
-    st.session_state.fed_indicator = selected
-    
-    df = get_fed_data(selected, year_range[0], year_range[1])
-    
+    df = get_data(ind, yr[0], yr[1])
     if not df.empty:
-        ind_name = indicator_options.get(selected, selected).split(' - ')[-1]
-        units = indicator_units.get(selected, '')
+        st.markdown(f"### {ind_opts.get(ind, ind)}")
         
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Latest", f"{df['value'].iloc[-1]:,.2f}")
-        with col2:
-            st.metric("Min", f"{df['value'].min():,.2f}")
-        with col3:
-            st.metric("Max", f"{df['value'].max():,.2f}")
-        with col4:
-            st.metric("Avg", f"{df['value'].mean():,.2f}")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Latest", f"{df.iloc[-1]['value']:,.2f}")
+        col2.metric("Min", f"{df['value'].min():,.2f}")
+        col3.metric("Max", f"{df['value'].max():,.2f}")
         
-        fig = px.line(df, x='year', y='value', title=ind_name, markers=True)
-        fig.update_layout(
-            xaxis_title="Year",
-            yaxis_title=units if units else "Value",
-            hovermode="x unified"
-        )
+        fig = px.line(df, x='year', y='value', markers=True)
+        fig.update_layout(xaxis_title="Year", yaxis_title=ind_units.get(ind, 'Value'), hovermode="x unified", height=450)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Data table
-        st.markdown("### Data")
-        st.dataframe(df[['year', 'value']], use_container_width=True, hide_index=True)
-    else:
-        st.warning("No data found for selected indicator.")
+        st.dataframe(df[['year', 'value']].sort_values('year', ascending=False), use_container_width=True, hide_index=True)
+        st.download_button("📥 CSV", df.to_csv(index=False), f"{ind}.csv", "text/csv")
 
-else:  # Compare
-    # Set defaults
-    indicator_list = list(indicator_options.keys())
-    if st.session_state.fed_indicator1 is None or st.session_state.fed_indicator1 not in indicator_options:
-        st.session_state.fed_indicator1 = indicator_list[0]
-    if st.session_state.fed_indicator2 is None or st.session_state.fed_indicator2 not in indicator_options:
-        st.session_state.fed_indicator2 = indicator_list[1] if len(indicator_list) > 1 else indicator_list[0]
+else:  # Compare Two
+    codes = list(ind_opts.keys())
+    if len(codes) < 2:
+        st.warning("Need at least 2 indicators.")
+        st.stop()
     
-    col1, col2 = st.columns(2)
+    col1, col2 = st.sidebar.columns(2)
     with col1:
-        series1 = st.selectbox(
-            "First Indicator",
-            indicator_list,
-            index=indicator_list.index(st.session_state.fed_indicator1) if st.session_state.fed_indicator1 in indicator_list else 0,
-            format_func=lambda x: indicator_options.get(x, x),
-            key="fed_compare1"
-        )
-        st.session_state.fed_indicator1 = series1
+        if st.session_state.fed_ind1 not in codes:
+            st.session_state.fed_ind1 = codes[0]
+        idx1 = codes.index(st.session_state.fed_ind1)
+        ind1 = st.selectbox("Indicator 1", codes, index=idx1, format_func=lambda x: ind_opts.get(x, x)[:20], key="fed_i1")
+        st.session_state.fed_ind1 = ind1
     with col2:
-        series2 = st.selectbox(
-            "Second Indicator",
-            indicator_list,
-            index=indicator_list.index(st.session_state.fed_indicator2) if st.session_state.fed_indicator2 in indicator_list else 0,
-            format_func=lambda x: indicator_options.get(x, x),
-            key="fed_compare2"
-        )
-        st.session_state.fed_indicator2 = series2
+        if st.session_state.fed_ind2 not in codes:
+            st.session_state.fed_ind2 = codes[1]
+        idx2 = codes.index(st.session_state.fed_ind2)
+        ind2 = st.selectbox("Indicator 2", codes, index=idx2, format_func=lambda x: ind_opts.get(x, x)[:20], key="fed_i2")
+        st.session_state.fed_ind2 = ind2
     
-    normalize = st.checkbox(
-        "Normalize to 100",
-        value=st.session_state.fed_normalize,
-        key="fed_normalize_cb"
-    )
-    st.session_state.fed_normalize = normalize
+    norm = st.sidebar.checkbox("Normalize", st.session_state.fed_norm, key="fed_norm_cb")
+    st.session_state.fed_norm = norm
     
-    df1 = get_fed_data(series1, year_range[0], year_range[1])
-    df2 = get_fed_data(series2, year_range[0], year_range[1])
+    df1 = get_data(ind1, yr[0], yr[1])
+    df2 = get_data(ind2, yr[0], yr[1])
     
     if not df1.empty and not df2.empty:
-        if normalize:
-            if df1['value'].iloc[0] != 0:
-                df1['value'] = (df1['value'] / df1['value'].iloc[0]) * 100
-            if df2['value'].iloc[0] != 0:
-                df2['value'] = (df2['value'] / df2['value'].iloc[0]) * 100
+        st.markdown(f"### {ind_opts.get(ind1, ind1)[:25]} vs {ind_opts.get(ind2, ind2)[:25]}")
         
-        name1 = indicator_options.get(series1, series1).split(' - ')[-1][:25]
-        name2 = indicator_options.get(series2, series2).split(' - ')[-1][:25]
+        if norm:
+            b1, b2 = df1.iloc[0]['value'], df2.iloc[0]['value']
+            if b1 and b1 != 0:
+                df1['value'] = df1['value'] / b1 * 100
+            if b2 and b2 != 0:
+                df2['value'] = df2['value'] / b2 * 100
         
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df1['year'], y=df1['value'], name=name1, mode='lines+markers'))
-        fig.add_trace(go.Scatter(x=df2['year'], y=df2['value'], name=name2, mode='lines+markers'))
+        fig.add_trace(go.Scatter(x=df1['year'], y=df1['value'], mode='lines+markers',
+            name=ind_opts.get(ind1, ind1)[:20], yaxis='y1'))
+        fig.add_trace(go.Scatter(x=df2['year'], y=df2['value'], mode='lines+markers',
+            name=ind_opts.get(ind2, ind2)[:20], yaxis='y2'))
+        
         fig.update_layout(
-            title="Indicator Comparison",
             xaxis_title="Year",
-            yaxis_title="Index (Base=100)" if normalize else "Value",
-            hovermode="x unified"
+            yaxis=dict(title=ind_units.get(ind1, '') if not norm else "Index", side='left'),
+            yaxis2=dict(title=ind_units.get(ind2, '') if not norm else "Index", side='right', overlaying='y'),
+            hovermode="x unified", height=450, legend=dict(x=0, y=1.1, orientation='h')
         )
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("No data found for one or both indicators.")
 
-# Footer
 st.markdown("---")
-st.caption("**Data Source:** Federal Reserve Economic Data (FRED) via St. Louis Fed - Annual averages")
+st.caption("Source: Federal Reserve Economic Data (FRED)")

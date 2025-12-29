@@ -1,152 +1,122 @@
-"""Unified data access module for all indicator sources."""
+"""Unified Data Access Layer - Single interface to time_series_unified_data."""
 import pandas as pd
 from database.connection import get_db_manager
 
 
 class UnifiedData:
-    """Access unified indicators from all sources."""
+    """Access layer for time_series_unified_data table."""
     
     def __init__(self):
         self.db = get_db_manager()
+        self.table = "time_series_unified_data"
     
-    def get_sources(self):
-        """Get list of available data sources."""
-        query = "SELECT DISTINCT source FROM unified_indicators ORDER BY source"
-        result = self.db.execute_query(query)
+    def get_sources(self) -> list:
+        """Get all available data sources."""
+        result = self.db.execute_query(
+            f"SELECT DISTINCT source FROM {self.table} ORDER BY source"
+        )
         return [r['source'] for r in result] if result else []
     
-    def get_countries(self, source=None):
-        """Get list of countries, optionally filtered by source."""
+    def get_categories(self, source: str = None) -> list:
+        """Get categories, optionally filtered by source."""
+        query = f"SELECT DISTINCT category FROM {self.table} WHERE category IS NOT NULL"
+        params = {}
         if source:
-            query = f"SELECT DISTINCT country_iso3, country_name FROM unified_indicators WHERE source = '{source}' ORDER BY country_name"
-        else:
-            query = "SELECT DISTINCT country_iso3, country_name FROM unified_indicators ORDER BY country_name"
-        result = self.db.execute_query(query)
-        return result if result else []
-    
-    def get_categories(self, source=None):
-        """Get list of categories, optionally filtered by source."""
-        if source:
-            query = f"SELECT DISTINCT category FROM unified_indicators WHERE source = '{source}' AND category IS NOT NULL ORDER BY category"
-        else:
-            query = "SELECT DISTINCT category FROM unified_indicators WHERE category IS NOT NULL ORDER BY category"
-        result = self.db.execute_query(query)
+            query += " AND source = :source"
+            params['source'] = source
+        query += " ORDER BY category"
+        result = self.db.execute_query(query, params if params else None)
         return [r['category'] for r in result] if result else []
     
-    def get_indicators(self, source=None, category=None):
-        """Get list of indicators, optionally filtered by source and category."""
-        conditions = []
-        if source:
-            conditions.append(f"source = '{source}'")
-        if category:
-            conditions.append(f"category = '{category}'")
-        
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
+    def get_indicators(self, source: str = None, category: str = None) -> list:
+        """Get indicators with metadata, optionally filtered."""
         query = f"""
             SELECT DISTINCT indicator_code, indicator_name, source, category, units
-            FROM unified_indicators 
-            WHERE {where_clause}
-            ORDER BY indicator_name
+            FROM {self.table} WHERE 1=1
         """
-        result = self.db.execute_query(query)
-        return result if result else []
+        params = {}
+        if source:
+            query += " AND source = :source"
+            params['source'] = source
+        if category:
+            query += " AND category = :category"
+            params['category'] = category
+        query += " ORDER BY indicator_name"
+        return self.db.execute_query(query, params if params else None) or []
     
-    def get_data(self, indicator_code=None, countries=None, source=None, year_start=None, year_end=None):
-        """Get indicator data with filters."""
-        conditions = []
+    def get_countries(self, source: str = None) -> list:
+        """Get countries with names, optionally filtered by source."""
+        query = f"SELECT DISTINCT country_iso3, country_name FROM {self.table} WHERE 1=1"
+        params = {}
+        if source:
+            query += " AND source = :source"
+            params['source'] = source
+        query += " ORDER BY country_name"
+        return self.db.execute_query(query, params if params else None) or []
+    
+    def get_year_range(self, source: str = None) -> tuple:
+        """Get min/max years available."""
+        query = f"SELECT MIN(year) as min_year, MAX(year) as max_year FROM {self.table}"
+        params = {}
+        if source:
+            query += " WHERE source = :source"
+            params['source'] = source
+        result = self.db.execute_query(query, params if params else None)
+        if result and result[0]['min_year']:
+            return int(result[0]['min_year']), int(result[0]['max_year'])
+        return 1970, 2024
+    
+    def get_data(self, indicator_code: str = None, countries: list = None,
+                 year_start: int = None, year_end: int = None,
+                 source: str = None) -> pd.DataFrame:
+        """Get time series data with filters."""
+        query = f"SELECT * FROM {self.table} WHERE 1=1"
+        params = {}
         
         if indicator_code:
-            conditions.append(f"indicator_code = '{indicator_code}'")
+            query += " AND indicator_code = :indicator"
+            params['indicator'] = indicator_code
         if source:
-            conditions.append(f"source = '{source}'")
+            query += " AND source = :source"
+            params['source'] = source
         if countries:
-            if isinstance(countries, list):
-                countries_str = "','".join(countries)
-                conditions.append(f"country_iso3 IN ('{countries_str}')")
-            else:
-                conditions.append(f"country_iso3 = '{countries}'")
+            placeholders = ', '.join([f":c{i}" for i in range(len(countries))])
+            query += f" AND country_iso3 IN ({placeholders})"
+            for i, c in enumerate(countries):
+                params[f'c{i}'] = c
         if year_start:
-            conditions.append(f"year >= {year_start}")
+            query += " AND year >= :year_start"
+            params['year_start'] = year_start
         if year_end:
-            conditions.append(f"year <= {year_end}")
+            query += " AND year <= :year_end"
+            params['year_end'] = year_end
         
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
-        query = f"""
-            SELECT source, country_iso3, country_name, indicator_code, indicator_name, 
-                   category, year, value, units
-            FROM unified_indicators 
-            WHERE {where_clause}
-            ORDER BY year, country_name
-        """
-        result = self.db.execute_query(query)
+        query += " ORDER BY country_iso3, year"
+        result = self.db.execute_query(query, params if params else None)
         return pd.DataFrame(result) if result else pd.DataFrame()
     
-    def get_multi_indicator_data(self, indicator_codes, countries=None, year_start=None, year_end=None):
-        """Get data for multiple indicators."""
-        if not indicator_codes:
-            return pd.DataFrame()
-        
-        conditions = []
-        indicators_str = "','".join(indicator_codes)
-        conditions.append(f"indicator_code IN ('{indicators_str}')")
-        
-        if countries:
-            if isinstance(countries, list):
-                countries_str = "','".join(countries)
-                conditions.append(f"country_iso3 IN ('{countries_str}')")
-            else:
-                conditions.append(f"country_iso3 = '{countries}'")
-        if year_start:
-            conditions.append(f"year >= {year_start}")
-        if year_end:
-            conditions.append(f"year <= {year_end}")
-        
-        where_clause = " AND ".join(conditions)
+    def search_indicators(self, search_term: str) -> list:
+        """Search indicators by name."""
         query = f"""
-            SELECT source, country_iso3, country_name, indicator_code, indicator_name, 
-                   category, year, value, units
-            FROM unified_indicators 
-            WHERE {where_clause}
-            ORDER BY year, country_name, indicator_code
-        """
-        result = self.db.execute_query(query)
-        return pd.DataFrame(result) if result else pd.DataFrame()
-    
-    def get_year_range(self, source=None):
-        """Get min and max years available."""
-        if source:
-            query = f"SELECT MIN(year) as min_year, MAX(year) as max_year FROM unified_indicators WHERE source = '{source}'"
-        else:
-            query = "SELECT MIN(year) as min_year, MAX(year) as max_year FROM unified_indicators"
-        result = self.db.execute_query(query)
-        if result:
-            return result[0]['min_year'], result[0]['max_year']
-        return 2000, 2023
-    
-    def search_indicators(self, search_term):
-        """Search indicators by name or code."""
-        query = f"""
-            SELECT DISTINCT indicator_code, indicator_name, source, category
-            FROM unified_indicators 
-            WHERE LOWER(indicator_name) LIKE LOWER('%{search_term}%')
-               OR LOWER(indicator_code) LIKE LOWER('%{search_term}%')
+            SELECT DISTINCT indicator_code, indicator_name, source, category, units
+            FROM {self.table}
+            WHERE LOWER(indicator_name) LIKE :term
             ORDER BY indicator_name
-            LIMIT 50
         """
-        result = self.db.execute_query(query)
-        return result if result else []
+        result = self.db.execute_query(query, {'term': f'%{search_term.lower()}%'})
+        return result or []
     
-    def get_summary_stats(self):
-        """Get summary statistics for the database."""
-        query = """
+    def get_summary_stats(self) -> dict:
+        """Get summary statistics."""
+        query = f"""
             SELECT 
                 COUNT(*) as total_records,
                 COUNT(DISTINCT source) as sources,
-                COUNT(DISTINCT country_iso3) as countries,
                 COUNT(DISTINCT indicator_code) as indicators,
+                COUNT(DISTINCT country_iso3) as countries,
                 MIN(year) as min_year,
                 MAX(year) as max_year
-            FROM unified_indicators
+            FROM {self.table}
         """
         result = self.db.execute_query(query)
         return result[0] if result else {}

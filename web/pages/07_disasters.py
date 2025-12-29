@@ -1,4 +1,4 @@
-"""Disasters page - Natural disaster data."""
+"""Disasters - Natural disaster events database."""
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -13,210 +13,157 @@ st.title("🌪️ Natural Disasters Database")
 
 db = get_db_manager()
 
-# Country ISO3 to name mapping
 COUNTRY_NAMES = {
     "CHN": "China", "JPN": "Japan", "USA": "United States", "TUR": "Turkey",
-    "IRN": "Iran", "IND": "India", "ITA": "Italy", "MEX": "Mexico",
-    "CHL": "Chile", "NZL": "New Zealand", "COL": "Colombia", "DZA": "Algeria",
-    "MAR": "Morocco", "DEU": "Germany", "GBR": "United Kingdom", "AUS": "Australia",
-    "BRA": "Brazil", "NER": "Niger", "ETH": "Ethiopia", "GHA": "Ghana",
-    "VNM": "Vietnam", "FRA": "France", "ESP": "Spain", "NLD": "Netherlands",
-    "CAN": "Canada", "ZAF": "South Africa", "PRT": "Portugal", "COD": "DR Congo",
-    "HTI": "Haiti", "PAK": "Pakistan", "BGD": "Bangladesh", "PHL": "Philippines",
-    "IDN": "Indonesia", "MMR": "Myanmar", "THA": "Thailand", "KOR": "South Korea"
+    "IRN": "Iran", "IND": "India", "ITA": "Italy", "MEX": "Mexico", "CHL": "Chile",
+    "NZL": "New Zealand", "COL": "Colombia", "DZA": "Algeria", "MAR": "Morocco",
+    "DEU": "Germany", "GBR": "United Kingdom", "AUS": "Australia", "BRA": "Brazil",
+    "NER": "Niger", "ETH": "Ethiopia", "GHA": "Ghana", "VNM": "Vietnam",
+    "FRA": "France", "ESP": "Spain", "NLD": "Netherlands", "CAN": "Canada",
+    "ZAF": "South Africa", "PRT": "Portugal", "COD": "DR Congo", "HTI": "Haiti",
+    "PAK": "Pakistan", "BGD": "Bangladesh", "PHL": "Philippines", "IDN": "Indonesia",
+    "MMR": "Myanmar", "THA": "Thailand", "KOR": "South Korea"
 }
 
-# Initialize session state for filters
-if 'disaster_type' not in st.session_state:
-    st.session_state.disaster_type = "All"
-if 'disaster_group' not in st.session_state:
-    st.session_state.disaster_group = "All"
-if 'disaster_country' not in st.session_state:
-    st.session_state.disaster_country = "All"
-if 'disaster_year_start' not in st.session_state:
-    st.session_state.disaster_year_start = 1976
-if 'disaster_year_end' not in st.session_state:
-    st.session_state.disaster_year_end = 2024
-
-# Get filter options from database
-@st.cache_data(ttl=300)
-def get_disaster_types():
-    result = db.execute_query("SELECT DISTINCT disaster_type FROM disasters WHERE disaster_type IS NOT NULL ORDER BY disaster_type")
-    return [r['disaster_type'] for r in result] if result else []
+# Session state
+for key, val in [('dis_type', 'All'), ('dis_group', 'All'), ('dis_country', 'All'),
+                 ('dis_yr_s', 1976), ('dis_yr_e', 2024)]:
+    if key not in st.session_state:
+        st.session_state[key] = val
 
 @st.cache_data(ttl=300)
-def get_disaster_groups():
-    result = db.execute_query("SELECT DISTINCT disaster_group FROM disasters WHERE disaster_group IS NOT NULL ORDER BY disaster_group")
-    return [r['disaster_group'] for r in result] if result else []
+def get_types():
+    r = db.execute_query("SELECT DISTINCT disaster_type FROM event_level_unified_data WHERE disaster_type IS NOT NULL ORDER BY disaster_type")
+    return [x['disaster_type'] for x in r] if r else []
+
+@st.cache_data(ttl=300)
+def get_groups():
+    r = db.execute_query("SELECT DISTINCT disaster_group FROM event_level_unified_data WHERE disaster_group IS NOT NULL ORDER BY disaster_group")
+    return [x['disaster_group'] for x in r] if r else []
 
 @st.cache_data(ttl=300)
 def get_countries():
-    result = db.execute_query("SELECT DISTINCT country_iso3 FROM disasters WHERE country_iso3 IS NOT NULL ORDER BY country_iso3")
-    return [r['country_iso3'] for r in result] if result else []
+    r = db.execute_query("SELECT DISTINCT country_iso3 FROM event_level_unified_data WHERE country_iso3 IS NOT NULL ORDER BY country_iso3")
+    return [x['country_iso3'] for x in r] if r else []
 
 @st.cache_data(ttl=300)
-def get_year_range():
-    result = db.execute_query("SELECT MIN(year) as min_year, MAX(year) as max_year FROM disasters")
-    if result and result[0]['min_year']:
-        return int(result[0]['min_year']), int(result[0]['max_year'])
-    return 1976, 2024
+def get_years():
+    r = db.execute_query("SELECT MIN(year) as mn, MAX(year) as mx FROM event_level_unified_data")
+    return (int(r[0]['mn']), int(r[0]['mx'])) if r and r[0]['mn'] else (1976, 2024)
 
-# Sidebar filters with session state
-st.sidebar.header("Filters")
-
-disaster_types = get_disaster_types()
-disaster_type = st.sidebar.selectbox(
-    "Disaster Type", 
-    ["All"] + disaster_types,
-    index=(["All"] + disaster_types).index(st.session_state.disaster_type) if st.session_state.disaster_type in ["All"] + disaster_types else 0,
-    key="disaster_type_select"
-)
-st.session_state.disaster_type = disaster_type
-
-disaster_groups = get_disaster_groups()
-disaster_group = st.sidebar.selectbox(
-    "Disaster Group", 
-    ["All"] + disaster_groups,
-    index=(["All"] + disaster_groups).index(st.session_state.disaster_group) if st.session_state.disaster_group in ["All"] + disaster_groups else 0,
-    key="disaster_group_select"
-)
-st.session_state.disaster_group = disaster_group
-
-min_year, max_year = get_year_range()
-year_range = st.sidebar.slider(
-    "Year Range", 
-    min_year, max_year, 
-    (st.session_state.disaster_year_start, st.session_state.disaster_year_end),
-    key="disaster_year_slider"
-)
-st.session_state.disaster_year_start = year_range[0]
-st.session_state.disaster_year_end = year_range[1]
-
-countries = get_countries()
-selected_country = st.sidebar.selectbox(
-    "Country", 
-    ["All"] + countries,
-    index=(["All"] + countries).index(st.session_state.disaster_country) if st.session_state.disaster_country in ["All"] + countries else 0,
-    format_func=lambda x: COUNTRY_NAMES.get(x, x) if x != "All" else "All",
-    key="disaster_country_select"
-)
-st.session_state.disaster_country = selected_country
-
-# Build query with named parameters for SQLAlchemy
-def get_disaster_data(disaster_type=None, disaster_group=None, country=None, year_start=None, year_end=None):
-    query = "SELECT * FROM disasters WHERE 1=1"
-    params = {}
-    
-    if disaster_type:
-        query += " AND disaster_type = :dtype"
-        params['dtype'] = disaster_type
-    if disaster_group:
-        query += " AND disaster_group = :dgroup"
-        params['dgroup'] = disaster_group
+def get_data(dtype=None, dgroup=None, country=None, yr_s=None, yr_e=None):
+    q = "SELECT * FROM event_level_unified_data WHERE 1=1"
+    p = {}
+    if dtype:
+        q += " AND disaster_type = :dt"
+        p['dt'] = dtype
+    if dgroup:
+        q += " AND disaster_group = :dg"
+        p['dg'] = dgroup
     if country:
-        query += " AND country_iso3 = :country"
-        params['country'] = country
-    if year_start:
-        query += " AND year >= :year_start"
-        params['year_start'] = year_start
-    if year_end:
-        query += " AND year <= :year_end"
-        params['year_end'] = year_end
-    
-    query += " ORDER BY year DESC, deaths DESC NULLS LAST"
-    
-    result = db.execute_query(query, params if params else None)
-    if result:
-        df = pd.DataFrame(result)
+        q += " AND country_iso3 = :co"
+        p['co'] = country
+    if yr_s:
+        q += " AND year >= :ys"
+        p['ys'] = yr_s
+    if yr_e:
+        q += " AND year <= :ye"
+        p['ye'] = yr_e
+    q += " ORDER BY year DESC, deaths DESC NULLS LAST"
+    r = db.execute_query(q, p or None)
+    if r:
+        df = pd.DataFrame(r)
         df['country'] = df['country_iso3'].map(lambda x: COUNTRY_NAMES.get(x, x))
         return df
     return pd.DataFrame()
 
-# Get data
-df = get_disaster_data(
-    disaster_type=disaster_type if disaster_type != "All" else None,
-    disaster_group=disaster_group if disaster_group != "All" else None,
-    country=selected_country if selected_country != "All" else None,
-    year_start=year_range[0], 
-    year_end=year_range[1]
+st.sidebar.header("Filters")
+
+types = get_types()
+opts = ["All"] + types
+idx = opts.index(st.session_state.dis_type) if st.session_state.dis_type in opts else 0
+dtype = st.sidebar.selectbox("Type", opts, index=idx, key="dis_type_sel")
+st.session_state.dis_type = dtype
+
+groups = get_groups()
+opts = ["All"] + groups
+idx = opts.index(st.session_state.dis_group) if st.session_state.dis_group in opts else 0
+dgroup = st.sidebar.selectbox("Group", opts, index=idx, key="dis_grp_sel")
+st.session_state.dis_group = dgroup
+
+mn, mx = get_years()
+yr = st.sidebar.slider("Years", mn, mx, (st.session_state.dis_yr_s, st.session_state.dis_yr_e), key="dis_yr")
+st.session_state.dis_yr_s, st.session_state.dis_yr_e = yr
+
+countries = get_countries()
+opts = ["All"] + countries
+idx = opts.index(st.session_state.dis_country) if st.session_state.dis_country in opts else 0
+country = st.sidebar.selectbox("Country", opts, index=idx,
+    format_func=lambda x: COUNTRY_NAMES.get(x, x) if x != "All" else "All", key="dis_co_sel")
+st.session_state.dis_country = country
+
+df = get_data(
+    dtype if dtype != "All" else None,
+    dgroup if dgroup != "All" else None,
+    country if country != "All" else None,
+    yr[0], yr[1]
 )
 
 if not df.empty:
-    # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Events", len(df))
-    with col2:
-        deaths_total = df['deaths'].sum() if 'deaths' in df.columns else 0
-        st.metric("Total Deaths", f"{int(deaths_total):,}" if pd.notna(deaths_total) else "N/A")
-    with col3:
-        affected_total = df['total_affected'].sum() if 'total_affected' in df.columns else 0
-        st.metric("Total Affected", f"{int(affected_total):,}" if pd.notna(affected_total) else "N/A")
-    with col4:
-        damage = df['damage_usd'].sum() if 'damage_usd' in df.columns else 0
-        if pd.notna(damage) and float(damage) > 0:
-            st.metric("Total Damage", f"${float(damage)/1e9:,.1f}B")
-        else:
-            st.metric("Total Damage", "N/A")
+    col1.metric("Events", len(df))
+    deaths = df['deaths'].sum() if 'deaths' in df.columns else 0
+    col2.metric("Deaths", f"{int(deaths):,}" if pd.notna(deaths) else "N/A")
+    affected = df['total_affected'].sum() if 'total_affected' in df.columns else 0
+    col3.metric("Affected", f"{int(affected):,}" if pd.notna(affected) else "N/A")
+    damage = df['damage_usd'].sum() if 'damage_usd' in df.columns else 0
+    col4.metric("Damage", f"${float(damage)/1e9:,.1f}B" if pd.notna(damage) and damage > 0 else "N/A")
 
     tab1, tab2, tab3 = st.tabs(["📊 Charts", "📈 Trends", "📋 Data"])
 
     with tab1:
         col1, col2 = st.columns(2)
         with col1:
-            type_counts = df['disaster_type'].value_counts().reset_index()
-            type_counts.columns = ['Type', 'Count']
-            fig = px.pie(type_counts, values='Count', names='Type', title="Events by Type")
+            tc = df['disaster_type'].value_counts().reset_index()
+            tc.columns = ['Type', 'Count']
+            fig = px.pie(tc, values='Count', names='Type', title="By Type")
             st.plotly_chart(fig, use_container_width=True)
         with col2:
             if 'deaths' in df.columns:
-                deaths_by_type = df.groupby('disaster_type')['deaths'].sum().reset_index()
-                deaths_by_type = deaths_by_type.sort_values('deaths', ascending=True)
-                fig = px.bar(deaths_by_type, x='deaths', y='disaster_type', orientation='h', title="Deaths by Type")
+                dbt = df.groupby('disaster_type')['deaths'].sum().reset_index().sort_values('deaths', ascending=True)
+                fig = px.bar(dbt, x='deaths', y='disaster_type', orientation='h', title="Deaths by Type")
                 st.plotly_chart(fig, use_container_width=True)
-
+        
         st.markdown("#### Deadliest Events")
         if 'deaths' in df.columns:
-            top_cols = ['year', 'country', 'disaster_type', 'event_name', 'deaths']
-            available = [c for c in top_cols if c in df.columns]
-            top = df.nlargest(10, 'deaths')[available]
-            st.dataframe(top, use_container_width=True, hide_index=True)
+            cols = ['year', 'country', 'disaster_type', 'event_name', 'deaths']
+            avail = [c for c in cols if c in df.columns]
+            st.dataframe(df.nlargest(10, 'deaths')[avail], use_container_width=True, hide_index=True)
 
     with tab2:
-        # Yearly trends
-        yearly = df.groupby('year').agg({
-            'id': 'count',
-            'deaths': 'sum',
-            'total_affected': 'sum'
-        }).reset_index()
-        yearly.columns = ['year', 'event_count', 'deaths', 'affected']
-        
+        yearly = df.groupby('year').agg({'id': 'count', 'deaths': 'sum', 'total_affected': 'sum'}).reset_index()
+        yearly.columns = ['year', 'events', 'deaths', 'affected']
         if not yearly.empty:
             col1, col2 = st.columns(2)
             with col1:
-                fig = px.bar(yearly, x='year', y='event_count', title="Events by Year")
+                fig = px.bar(yearly, x='year', y='events', title="Events by Year")
                 st.plotly_chart(fig, use_container_width=True)
             with col2:
                 fig = px.line(yearly, x='year', y='deaths', title="Deaths by Year", markers=True)
                 st.plotly_chart(fig, use_container_width=True)
-            
-            # Damage over time
             if 'damage_usd' in df.columns:
-                damage_yearly = df.groupby('year')['damage_usd'].sum().reset_index()
-                damage_yearly['damage_billions'] = damage_yearly['damage_usd'].astype(float) / 1e9
-                fig = px.bar(damage_yearly, x='year', y='damage_billions', title="Economic Damage by Year ($B)")
+                dmg = df.groupby('year')['damage_usd'].sum().reset_index()
+                dmg['damage_b'] = dmg['damage_usd'].astype(float) / 1e9
+                fig = px.bar(dmg, x='year', y='damage_b', title="Damage by Year ($B)")
                 st.plotly_chart(fig, use_container_width=True)
 
     with tab3:
-        display_cols = ['year', 'country', 'disaster_type', 'disaster_group', 'event_name', 'deaths', 'total_affected', 'damage_usd']
-        available_cols = [c for c in display_cols if c in df.columns]
-        st.dataframe(df[available_cols], use_container_width=True, hide_index=True)
-        csv = df[available_cols].to_csv(index=False)
-        st.download_button("📥 Download CSV", data=csv, file_name="disaster_data.csv", mime="text/csv")
-
+        cols = ['year', 'country', 'disaster_type', 'disaster_group', 'event_name', 'deaths', 'total_affected', 'damage_usd']
+        avail = [c for c in cols if c in df.columns]
+        st.dataframe(df[avail], use_container_width=True, hide_index=True)
+        st.download_button("📥 CSV", df[avail].to_csv(index=False), "disasters.csv", "text/csv")
 else:
-    st.warning("No disaster data found for the selected filters.")
+    st.warning("No disaster data found.")
 
-# Footer
 st.markdown("---")
-st.caption("Data source: EM-DAT (CRED/UCLouvain) - Major historical disasters")
+st.caption("Source: EM-DAT (CRED/UCLouvain)")
