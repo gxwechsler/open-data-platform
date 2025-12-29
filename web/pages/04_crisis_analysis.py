@@ -22,30 +22,10 @@ if 'saved_ca_yr' not in st.session_state:
     st.session_state.saved_ca_yr = None
 
 @st.cache_data(ttl=300)
-def get_crisis_indicators():
-    """Get crisis type indicators (banking, currency, sovereign)"""
-    r = db.execute_query("""
-        SELECT DISTINCT indicator_code, indicator_name, source
-        FROM time_series_unified_data 
-        WHERE source IN ('LV', 'RR')
-        AND (
-            LOWER(indicator_name) LIKE '%banking%' OR
-            LOWER(indicator_name) LIKE '%currency%' OR
-            LOWER(indicator_name) LIKE '%sovereign%' OR
-            LOWER(indicator_name) LIKE '%debt%' OR
-            LOWER(indicator_code) LIKE '%bank%' OR
-            LOWER(indicator_code) LIKE '%currency%' OR
-            LOWER(indicator_code) LIKE '%sovereign%'
-        )
-        ORDER BY indicator_name
-    """)
-    return r if r else []
-
-@st.cache_data(ttl=300)
 def get_all_crisis_data():
     """Get all binary crisis indicators"""
     r = db.execute_query("""
-        SELECT country_iso3, country_name, year, indicator_code, indicator_name, value, source
+        SELECT country_iso3, country_name, year, indicator_code, indicator_name, value, source, units
         FROM time_series_unified_data 
         WHERE source IN ('LV', 'RR')
         ORDER BY country_name, year
@@ -77,7 +57,7 @@ co_opts = {c['country_iso3']: c['country_name'] for c in countries}
 co_codes = list(co_opts.keys())
 
 if st.session_state.saved_ca_cos is None:
-    st.session_state.saved_ca_cos = co_codes  # All countries by default
+    st.session_state.saved_ca_cos = co_codes
 default_cos = [c for c in st.session_state.saved_ca_cos if c in co_codes] or co_codes
 
 sel_cos = st.sidebar.multiselect("Countries", co_codes, default=default_cos,
@@ -132,6 +112,7 @@ if crisis_events.empty:
 
 # --- Analyze concurrent crises ---
 st.markdown("### 📊 Crisis Overview")
+st.caption("**Units:** Binary indicators (1 = crisis present, 0 = no crisis)")
 
 col1, col2, col3, col4 = st.columns(4)
 banking = crisis_events[crisis_events['crisis_type'] == 'Banking']
@@ -184,7 +165,8 @@ with tab1:
         title="Crisis Events Over Time by Type",
         labels={'count': 'Number of Countries', 'year': 'Year', 'crisis_type': 'Crisis Type'},
         color_discrete_map={'Banking': '#e74c3c', 'Currency': '#f39c12', 'Sovereign': '#9b59b6'})
-    fig.update_layout(hovermode="x unified", height=400, barmode='stack')
+    fig.update_layout(hovermode="x unified", height=400, barmode='stack',
+        yaxis_title="Number of Countries in Crisis")
     st.plotly_chart(fig, use_container_width=True)
     
     # Country distribution
@@ -197,8 +179,11 @@ with tab1:
 
 with tab2:
     st.markdown("#### Double Crises (2 concurrent types)")
+    st.caption("**Definition:** Two different crisis types (Banking, Currency, or Sovereign) occurring in the same country-year")
+    
     if len(double_crises) > 0:
         # Identify which pairs
+        double_crises = double_crises.copy()
         double_crises['pair'] = double_crises.apply(
             lambda r: '+'.join(sorted([t for t in ['Banking', 'Currency', 'Sovereign'] if r[t] == 1])), axis=1)
         
@@ -224,6 +209,8 @@ with tab2:
 
 with tab3:
     st.markdown("#### Triple Crises (Banking + Currency + Sovereign)")
+    st.caption("**Definition:** All three crisis types occurring simultaneously - the most severe scenario")
+    
     if len(triple_crises) > 0:
         st.error(f"⚠️ Found **{len(triple_crises)}** triple crisis events!")
         

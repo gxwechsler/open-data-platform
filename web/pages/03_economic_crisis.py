@@ -104,7 +104,19 @@ if source != 'All':
     indicators = [i for i in indicators if i['source'] == source]
 
 ind_opts = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in indicators}
-ind_units = {i['indicator_code']: i.get('units') or 'Binary (0/1)' for i in indicators}
+ind_units = {}
+for i in indicators:
+    unit = i.get('units') or ''
+    if not unit or unit.strip() == '':
+        # Binary crisis indicators
+        name = i.get('indicator_name', '').lower()
+        if 'crisis' in name or 'banking' in name or 'currency' in name or 'sovereign' in name:
+            unit = 'Binary (1=crisis, 0=no crisis)'
+        elif 'cost' in name or 'loss' in name:
+            unit = '% of GDP'
+        else:
+            unit = 'Value'
+    ind_units[i['indicator_code']] = unit
 
 if not ind_opts:
     st.warning("No crisis indicators found in database.")
@@ -129,7 +141,7 @@ co_opts = {c['country_iso3']: c['country_name'] for c in countries}
 co_codes = list(co_opts.keys())
 
 if st.session_state.saved_ec_cos is None:
-    st.session_state.saved_ec_cos = co_codes  # Default: ALL countries
+    st.session_state.saved_ec_cos = co_codes
 default_cos = [c for c in st.session_state.saved_ec_cos if c in co_codes] or co_codes
 
 sel_cos = st.sidebar.multiselect("Countries", co_codes, default=default_cos,
@@ -139,7 +151,7 @@ st.session_state.saved_ec_cos = sel_cos
 # Years
 mn, mx = get_years()
 if st.session_state.saved_ec_yr is None:
-    st.session_state.saved_ec_yr = (mn, mx)  # Full range by default
+    st.session_state.saved_ec_yr = (mn, mx)
 default_yr = (max(mn, st.session_state.saved_ec_yr[0]), min(mx, st.session_state.saved_ec_yr[1]))
 
 yr = st.sidebar.slider("Years", mn, mx, default_yr, key="widget_ec_yr")
@@ -182,7 +194,6 @@ st.caption(f"**Units:** {unit} | **Records:** {len(df):,}")
 tab1, tab2, tab3 = st.tabs(["📈 Timeline", "🗺️ Heatmap", "📋 Data"])
 
 with tab1:
-    # Detect if binary indicator
     is_binary = df['value'].dropna().isin([0, 1]).all()
     
     if is_binary:
@@ -191,7 +202,8 @@ with tab1:
             fig = px.scatter(crisis_df, x='year', y='country_name', color='country_name',
                 title=f"Crisis Events ({unit})", hover_data=['source'])
             fig.update_traces(marker=dict(size=12, symbol='square'))
-            fig.update_layout(xaxis_title="Year", yaxis_title="Country", showlegend=False, height=max(400, len(crisis_df['country_name'].unique()) * 25))
+            fig.update_layout(xaxis_title="Year", yaxis_title="Country", showlegend=False, 
+                height=max(400, len(crisis_df['country_name'].unique()) * 25))
             st.plotly_chart(fig, use_container_width=True)
             
             col1, col2, col3 = st.columns(3)
@@ -201,7 +213,6 @@ with tab1:
         else:
             st.success("✅ No crisis events in selected range.")
     else:
-        # Continuous indicator - line chart
         fig = px.line(df, x='year', y='value', color='country_name', markers=True,
             labels={'value': unit, 'year': 'Year', 'country_name': 'Country'})
         fig.update_layout(xaxis_title="Year", yaxis_title=unit, hovermode="x unified", height=450)
@@ -219,10 +230,11 @@ with tab2:
         st.info("No data to display in heatmap.")
 
 with tab3:
-    disp = df[['year', 'country_name', 'country_iso3', 'indicator_name', 'value', 'source']].sort_values(['country_name', 'year'])
-    disp = disp.rename(columns={'value': f'Value ({unit})'})
+    disp = df[['year', 'country_name', 'country_iso3', 'indicator_name', 'value', 'source']].copy()
+    disp['units'] = unit
+    disp = disp.sort_values(['country_name', 'year'])
     st.dataframe(disp, use_container_width=True, hide_index=True)
-    st.download_button("📥 CSV", df.to_csv(index=False), "crisis_data.csv", "text/csv")
+    st.download_button("📥 CSV", disp.to_csv(index=False), "crisis_data.csv", "text/csv")
 
 st.markdown("---")
 st.caption("**Sources:** Laeven-Valencia (IMF systemic banking crises database), Reinhart-Rogoff (historical financial crises)")

@@ -16,10 +16,9 @@ st.title("📈 Time Series Analysis")
 data = UnifiedData()
 
 # --- Initialize logical state ---
-# Use 'initialized_ts' flag to track first load vs navigation
 if 'initialized_ts' not in st.session_state:
     st.session_state.initialized_ts = False
-    st.session_state.saved_ts_sources = []  # Empty on first load
+    st.session_state.saved_ts_sources = []
     st.session_state.saved_ts_cats = []
     st.session_state.saved_ts_inds = []
     st.session_state.saved_ts_cos = []
@@ -64,10 +63,27 @@ if not unique:
     st.warning("No indicators found for selected sources/categories.")
     st.stop()
 
+# Build indicator metadata dictionaries
 ind_opts = {i['indicator_code']: f"{i['indicator_name']} ({i['source']})" for i in unique}
-ind_units = {i['indicator_code']: i.get('units', '') or 'Value' for i in unique}
-ind_codes = list(ind_opts.keys())
+ind_units = {}
+for i in unique:
+    unit = i.get('units') or ''
+    if not unit or unit.strip() == '':
+        # Infer from indicator name if possible
+        name = i.get('indicator_name', '').lower()
+        if 'gdp' in name and 'capita' in name:
+            unit = 'USD per capita'
+        elif 'gdp' in name:
+            unit = 'USD'
+        elif 'percent' in name or 'rate' in name or '%' in name:
+            unit = '%'
+        elif 'population' in name:
+            unit = 'Persons'
+        else:
+            unit = 'Value'
+    ind_units[i['indicator_code']] = unit
 
+ind_codes = list(ind_opts.keys())
 default_inds = [i for i in st.session_state.saved_ts_inds if i in ind_codes]
 
 sel_inds = st.sidebar.multiselect("Indicators (max 4)", ind_codes, default=default_inds,
@@ -80,13 +96,13 @@ if not sel_inds:
 
 st.sidebar.markdown("**Selected:**")
 for i in sel_inds:
-    st.sidebar.caption(f"• {ind_opts.get(i, i)[:50]}")
+    unit = ind_units.get(i, 'Value')
+    st.sidebar.caption(f"• {ind_opts.get(i, i)[:40]}... [{unit}]")
 
 # --- Countries ---
 countries = data.get_countries()
 co_opts = {c['country_iso3']: c['country_name'] for c in countries}
 co_codes = list(co_opts.keys())
-
 default_cos = [c for c in st.session_state.saved_ts_cos if c in co_codes]
 
 sel_cos = st.sidebar.multiselect("Countries", co_codes, default=default_cos,
@@ -97,7 +113,6 @@ if not sel_cos:
     st.info("👈 Select at least one **Country**.")
     st.stop()
 
-# Mark as initialized after first successful configuration
 st.session_state.initialized_ts = True
 
 # --- Year range ---
@@ -154,37 +169,42 @@ def is_sparse_data(df):
     years = sorted(df['year'].unique())
     if len(years) < 2:
         return True
-    # Check if gaps exist between years
     expected_years = set(range(min(years), max(years) + 1))
     actual_years = set(years)
     coverage = len(actual_years) / len(expected_years) if expected_years else 1
-    return coverage < 0.5  # Less than 50% coverage = sparse
+    return coverage < 0.5
 
-def get_chart_mode(df):
-    """Return 'bar' for sparse data, 'line' for continuous"""
-    return 'bar' if is_sparse_data(df) else 'line'
+def get_unit_label(indicator_code, normalized=False):
+    """Get formatted unit label for axis"""
+    if normalized:
+        return "Index (base year = 100)"
+    return ind_units.get(indicator_code, 'Value')
 
 # --- Chart ---
 if len(sel_inds) == 1:
     ind = sel_inds[0]
-    unit = "Index (base=100)" if norm else ind_units.get(ind, 'Value')
+    unit_label = get_unit_label(ind, norm)
+    
     st.markdown(f"### {ind_opts.get(ind, ind)}")
+    st.caption(f"**Units:** {unit_label}")
+    
     df = normalize_df(all_data[0].copy())
-    chart_type = get_chart_mode(df)
+    chart_type = 'bar' if is_sparse_data(df) else 'line'
     
     if chart_type == 'bar':
         fig = px.bar(df, x='year', y='value', color='country_name', barmode='group',
-            labels={'value': unit, 'year': 'Year', 'country_name': 'Country'})
+            labels={'value': unit_label, 'year': 'Year', 'country_name': 'Country'})
     else:
         mode = 'lines+markers' if markers else 'lines'
         fig = go.Figure()
         for c in df['country_name'].unique():
             cdf = df[df['country_name'] == c].sort_values('year')
             fig.add_trace(go.Scatter(x=cdf['year'], y=cdf['value'], mode=mode, name=c))
-        fig.update_layout(xaxis_title="Year", yaxis_title=unit)
+        fig.update_layout(xaxis_title="Year", yaxis_title=unit_label)
     
     fig.update_layout(hovermode="x unified", height=500)
     st.plotly_chart(fig, use_container_width=True)
+
 else:
     st.markdown("### Multi-Indicator Comparison")
     mode = 'lines+markers' if markers else 'lines'
@@ -192,17 +212,18 @@ else:
     if len(sel_cos) == 1:
         st.markdown(f"**Country:** {co_opts.get(sel_cos[0])}")
         
-        # Check if any indicator has sparse data
+        # Display units for all selected indicators
+        st.caption("**Units:** " + " | ".join([f"{ind_opts.get(i, i).split(' (')[0][:20]}: {get_unit_label(i, norm)}" for i in sel_inds]))
+        
         any_sparse = any(is_sparse_data(d) for d in all_data)
         
         if any_sparse:
-            # Use grouped bar chart
             combined_df = pd.concat(all_data, ignore_index=True)
             combined_df = normalize_df(combined_df)
             combined_df['indicator_short'] = combined_df['indicator_code'].map(
-                lambda x: ind_opts.get(x, x).split(' (')[0][:25])
+                lambda x: f"{ind_opts.get(x, x).split(' (')[0][:20]} [{get_unit_label(x, norm)}]")
             fig = px.bar(combined_df, x='year', y='value', color='indicator_short', barmode='group',
-                labels={'value': 'Index' if norm else 'Value', 'year': 'Year'})
+                labels={'value': 'Value', 'year': 'Year'})
         elif dual and len(sel_inds) >= 2:
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             half = len(sel_inds) // 2 + len(sel_inds) % 2
@@ -211,45 +232,46 @@ else:
                 if df:
                     df = normalize_df(df[0].copy()).sort_values('year')
                     sec = i >= half
-                    unit = "Index" if norm else ind_units.get(ind, 'Value')
+                    unit_label = get_unit_label(ind, norm)
                     fig.add_trace(go.Scatter(x=df['year'], y=df['value'], mode=mode,
-                        name=f"{ind_opts.get(ind, ind).split(' (')[0][:25]} ({unit})",
+                        name=f"{ind_opts.get(ind, ind).split(' (')[0][:25]}",
                         line=dict(color=colors[i%4])), secondary_y=sec)
             fig.update_layout(xaxis_title="Year", hovermode="x unified", height=500)
-            left_unit = "Index" if norm else ind_units.get(sel_inds[0], 'Value')
-            right_unit = "Index" if norm else ind_units.get(sel_inds[half], 'Value')
-            fig.update_yaxes(title_text=left_unit, secondary_y=False)
-            fig.update_yaxes(title_text=right_unit, secondary_y=True)
+            fig.update_yaxes(title_text=get_unit_label(sel_inds[0], norm), secondary_y=False)
+            fig.update_yaxes(title_text=get_unit_label(sel_inds[half], norm), secondary_y=True)
         else:
             fig = go.Figure()
             for i, ind in enumerate(sel_inds):
                 df = [d for d in all_data if d['indicator_code'].iloc[0] == ind]
                 if df:
                     df = normalize_df(df[0].copy()).sort_values('year')
-                    unit = "Index" if norm else ind_units.get(ind, 'Value')
+                    unit_label = get_unit_label(ind, norm)
                     fig.add_trace(go.Scatter(x=df['year'], y=df['value'], mode=mode,
-                        name=f"{ind_opts.get(ind, ind).split(' (')[0][:25]} ({unit})",
+                        name=f"{ind_opts.get(ind, ind).split(' (')[0][:25]} [{unit_label}]",
                         line=dict(color=colors[i%4])))
-            fig.update_layout(xaxis_title="Year", yaxis_title="Index" if norm else "Value",
+            fig.update_layout(xaxis_title="Year", yaxis_title="Value (see legend for units)",
                              hovermode="x unified", height=500)
         
         st.plotly_chart(fig, use_container_width=True)
     else:
         ind = sel_inds[0]
-        unit = "Index (base=100)" if norm else ind_units.get(ind, 'Value')
+        unit_label = get_unit_label(ind, norm)
+        
         st.markdown(f"**Indicator:** {ind_opts.get(ind, ind)}")
+        st.caption(f"**Units:** {unit_label}")
+        
         df = normalize_df(all_data[0].copy())
-        chart_type = get_chart_mode(df)
+        chart_type = 'bar' if is_sparse_data(df) else 'line'
         
         if chart_type == 'bar':
             fig = px.bar(df, x='year', y='value', color='country_name', barmode='group',
-                labels={'value': unit, 'year': 'Year', 'country_name': 'Country'})
+                labels={'value': unit_label, 'year': 'Year', 'country_name': 'Country'})
         else:
             fig = go.Figure()
             for c in df['country_name'].unique():
                 cdf = df[df['country_name'] == c].sort_values('year')
                 fig.add_trace(go.Scatter(x=cdf['year'], y=cdf['value'], mode=mode, name=c))
-            fig.update_layout(xaxis_title="Year", yaxis_title=unit)
+            fig.update_layout(xaxis_title="Year", yaxis_title=unit_label)
         
         fig.update_layout(hovermode="x unified", height=500)
         st.plotly_chart(fig, use_container_width=True)
@@ -258,6 +280,10 @@ else:
             st.info("💡 Select one country to compare multiple indicators.")
 
 st.markdown("---")
-disp = combined[['year', 'country_name', 'indicator_name', 'value', 'units', 'source']].sort_values(['indicator_name', 'country_name', 'year'])
+
+# Show units in data table
+disp = combined[['year', 'country_name', 'indicator_name', 'value', 'source']].copy()
+disp['units'] = combined['indicator_code'].map(ind_units)
+disp = disp.sort_values(['indicator_name', 'country_name', 'year'])
 st.dataframe(disp, use_container_width=True, hide_index=True)
 st.download_button("📥 CSV", disp.to_csv(index=False), "timeseries.csv", "text/csv")

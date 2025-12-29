@@ -88,13 +88,14 @@ if filtered.empty:
     st.warning("No events match filters.")
     st.stop()
 
-# --- Metrics ---
+# --- Metrics with units ---
+st.markdown("### Summary Statistics")
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Events", len(filtered))
-col2.metric("Deaths", f"{filtered['deaths'].sum():,.0f}" if filtered['deaths'].sum() > 0 else "N/A")
-col3.metric("Affected (persons)", f"{filtered['total_affected'].sum():,.0f}" if filtered['total_affected'].sum() > 0 else "N/A")
+col1.metric("Events", f"{len(filtered):,}", help="Number of disaster events")
+col2.metric("Deaths", f"{filtered['deaths'].sum():,.0f}" if filtered['deaths'].sum() > 0 else "N/A", help="Total deaths (persons)")
+col3.metric("Affected", f"{filtered['total_affected'].sum():,.0f}" if filtered['total_affected'].sum() > 0 else "N/A", help="Total affected (persons)")
 damage = filtered['total_damage'].sum()
-col4.metric("Damage (USD)", f"${damage/1e9:.1f}B" if damage > 0 else "N/A")
+col4.metric("Damage", f"${damage/1e9:.1f}B" if damage > 0 else "N/A", help="Total damage (USD)")
 
 tab1, tab2, tab3 = st.tabs(["📊 Charts", "📈 Trends", "📋 Data"])
 
@@ -102,15 +103,20 @@ with tab1:
     col1, col2 = st.columns(2)
     with col1:
         type_counts = filtered['disaster_type'].value_counts()
-        fig = px.pie(values=type_counts.values, names=type_counts.index, title="By Type")
+        fig = px.pie(values=type_counts.values, names=type_counts.index, title="Events by Type")
+        fig.update_layout(height=400)
         st.plotly_chart(fig, use_container_width=True)
+    
     with col2:
         deaths_by_type = filtered.groupby('disaster_type')['deaths'].sum().sort_values()
         fig = px.bar(x=deaths_by_type.values, y=deaths_by_type.index, orientation='h',
-            title="Deaths by Type", labels={'x': 'Deaths (persons)', 'y': 'Event Type'})
+            title="Deaths by Type",
+            labels={'x': 'Deaths (persons)', 'y': 'Event Type'})
+        fig.update_layout(height=400, xaxis_title="Deaths (persons)")
         st.plotly_chart(fig, use_container_width=True)
     
     st.markdown("### Deadliest Events")
+    st.caption("**Units:** Deaths in persons")
     top = filtered.nlargest(10, 'deaths')[['year', 'country', 'disaster_type', 'event_name', 'deaths']]
     top['deaths'] = top['deaths'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
     st.dataframe(top, use_container_width=True, hide_index=True)
@@ -126,26 +132,33 @@ with tab2:
     
     fig = px.bar(yearly, x='Year', y='Events', title="Events per Year",
         labels={'Events': 'Number of Events', 'Year': 'Year'})
+    fig.update_layout(yaxis_title="Number of Events")
     st.plotly_chart(fig, use_container_width=True)
     
     col1, col2 = st.columns(2)
     with col1:
         fig = px.line(yearly, x='Year', y='Deaths', markers=True, title="Deaths per Year",
             labels={'Deaths': 'Deaths (persons)', 'Year': 'Year'})
+        fig.update_layout(yaxis_title="Deaths (persons)")
         st.plotly_chart(fig, use_container_width=True)
     with col2:
         fig = px.line(yearly, x='Year', y='Affected', markers=True, title="People Affected per Year",
             labels={'Affected': 'Affected (persons)', 'Year': 'Year'})
+        fig.update_layout(yaxis_title="Affected (persons)")
         st.plotly_chart(fig, use_container_width=True)
     
     # Damage trend
     fig = px.line(yearly, x='Year', y='Damage', markers=True, title="Economic Damage per Year",
         labels={'Damage': 'Damage (USD)', 'Year': 'Year'})
+    fig.update_layout(yaxis_title="Damage (USD)")
     st.plotly_chart(fig, use_container_width=True)
 
 with tab3:
+    st.markdown("### Event Data")
+    st.caption("**Column Units:** Deaths (persons) | Affected (persons) | Damage (USD)")
+    
     disp = filtered[['year', 'country', 'disaster_type', 'disaster_group', 'event_name', 
-                     'deaths', 'total_affected', 'total_damage', 'latitude', 'longitude']]
+                     'deaths', 'total_affected', 'total_damage', 'latitude', 'longitude']].copy()
     disp = disp.rename(columns={
         'deaths': 'Deaths (persons)',
         'total_affected': 'Affected (persons)',
@@ -155,4 +168,4 @@ with tab3:
     st.download_button("📥 CSV", filtered.to_csv(index=False), "acute_climatic_events.csv", "text/csv")
 
 st.markdown("---")
-st.caption("Source: EM-DAT International Disaster Database")
+st.caption("**Source:** EM-DAT International Disaster Database | **Units:** Deaths & Affected in persons, Damage in USD")
