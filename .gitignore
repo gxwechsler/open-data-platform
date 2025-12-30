@@ -29,3 +29,4 @@ Thumbs.db
 !sample_data/
 .env
 .env.local
+data/wid/
