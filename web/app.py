@@ -23,6 +23,7 @@ Welcome to the **Open Data Platform**! This application provides access to:
 - ✅ **EM-DAT** - Natural disaster data (1976-2024)
 - ✅ **Laeven-Valencia** - Banking crisis costs (1980-2008)
 - ✅ **Reinhart-Rogoff** - Historical crises (1340-2002)
+- ✅ **WID** - Income & wealth inequality (1950-2024)
 
 Use the sidebar to navigate between different analysis pages.
 """)
