@@ -2,7 +2,9 @@ import psycopg2
 import requests
 import time
 
-DATABASE_URL = "postgresql://postgres.jtyykeaeupxbbkaqkfqp:CodeNess6504@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("Set DATABASE_URL environment variable")
 
 COUNTRIES = "ARG;BRA;CHL;COL;MEX;USA;CAN;DEU;FRA;ITA;SWE;NLD;CHE;DNK;FIN;NOR;TUR;ESP;GBR;IRL;IND;CHN;JPN;VNM;SGP;ISR;IRN;ARE;SAU;QAT;NER;ZAF;EGY;COD;MAR;DZA;ETH;LBY;TZA;TUN;GHA;AUS;NZL"
 

@@ -10,7 +10,9 @@ Volcanic activity, Extreme temperatures, Landslides
 """
 import psycopg2
 
-DATABASE_URL = "postgresql://postgres.jtyykeaeupxbbkaqkfqp:CodeNess6504@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("Set DATABASE_URL environment variable")
 
 COUNTRY_NAMES = {
     "ARG": "Argentina", "BRA": "Brazil", "CHL": "Chile", "COL": "Colombia",

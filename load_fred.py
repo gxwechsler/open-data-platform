@@ -9,7 +9,9 @@ import psycopg2
 import time
 import os
 
-DATABASE_URL = "postgresql://postgres.jtyykeaeupxbbkaqkfqp:CodeNess6504@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("Set DATABASE_URL environment variable")
 
 # FRED API key - get yours at https://fred.stlouisfed.org/docs/api/api_key.html
 FRED_API_KEY = os.environ.get('FRED_API_KEY', '')
